@@ -117,6 +117,7 @@ export default function Home() {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [orderConfirmed, setOrderConfirmed] = useState(false);
 
+  // DARK MODE
   const [darkMode, setDarkMode] = useState(true);
 
   const [input, setInput] = useState("");
@@ -132,8 +133,7 @@ export default function Home() {
     },
   ]);
 
-  const messagesEndRef =
-    useRef<HTMLDivElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
@@ -145,8 +145,7 @@ export default function Home() {
     category === "All"
       ? products
       : products.filter(
-          (product) =>
-            product.category === category
+          (product) => product.category === category
         );
 
   const cartCount = cart.reduce(
@@ -160,12 +159,15 @@ export default function Home() {
     0
   );
 
-  /* =========================
-     CART FUNCTIONS
-  ========================= */
+  // =========================
+  // CART FUNCTIONS
+  // =========================
 
-  function addToCart(product: Product, amount = 1) {
-    if (amount <= 0) return;
+  function addToCart(
+    product: Product,
+    quantity: number = 1
+  ) {
+    if (quantity <= 0) return;
 
     setCart((previous) => {
       const exists = previous.find(
@@ -177,8 +179,7 @@ export default function Home() {
           item.id === product.id
             ? {
                 ...item,
-                quantity:
-                  item.quantity + amount,
+                quantity: item.quantity + quantity,
               }
             : item
         );
@@ -188,18 +189,10 @@ export default function Home() {
         ...previous,
         {
           ...product,
-          quantity: amount,
+          quantity,
         },
       ];
     });
-  }
-
-  function removeFromCart(productId: number) {
-    setCart((previous) =>
-      previous.filter(
-        (item) => item.id !== productId
-      )
-    );
   }
 
   function increaseQuantity(productId: number) {
@@ -226,18 +219,19 @@ export default function Home() {
               }
             : item
         )
-        .filter(
-          (item) => item.quantity > 0
-        )
+        .filter((item) => item.quantity > 0)
     );
   }
 
-  /*
-   * Set exact quantity.
-   * Used by PharmaAI when the customer says:
-   * "I want 3 Panadol"
-   */
-  function setProductQuantity(
+  function removeFromCart(productId: number) {
+    setCart((previous) =>
+      previous.filter(
+        (item) => item.id !== productId
+      )
+    );
+  }
+
+  function changeQuantity(
     productId: number,
     quantity: number
   ) {
@@ -246,41 +240,21 @@ export default function Home() {
       return;
     }
 
-    setCart((previous) => {
-      const exists = previous.find(
-        (item) => item.id === productId
-      );
-
-      if (!exists) {
-        const product = products.find(
-          (item) => item.id === productId
-        );
-
-        if (!product) return previous;
-
-        return [
-          ...previous,
-          {
-            ...product,
-            quantity,
-          },
-        ];
-      }
-
-      return previous.map((item) =>
+    setCart((previous) =>
+      previous.map((item) =>
         item.id === productId
           ? {
               ...item,
               quantity,
             }
           : item
-      );
-    });
+      )
+    );
   }
 
-  /* =========================
-     AI
-  ========================= */
+  // =========================
+  // AI
+  // =========================
 
   async function sendMessage(text = input) {
     if (!text.trim() || loading) return;
@@ -300,24 +274,17 @@ export default function Home() {
     setLoading(true);
 
     try {
-      const response = await fetch(
-        "/api/chat",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            messages: updatedMessages,
-            products,
-            cart: cart.map((item) => ({
-              productId: item.id,
-              name: item.name,
-              quantity: item.quantity,
-            })),
-          }),
-        }
-      );
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: updatedMessages,
+          products,
+          cart,
+        }),
+      });
 
       const data = await response.json();
 
@@ -327,18 +294,14 @@ export default function Home() {
         );
       }
 
-      /* =========================
-         AI CART ACTIONS
-      ========================= */
+      // =========================
+      // AI CART ACTIONS
+      // =========================
 
-      if (
-        data.action?.type ===
-        "ADD_TO_CART"
-      ) {
+      if (data.action?.type === "ADD_TO_CART") {
         const product = products.find(
           (item) =>
-            item.id ===
-            data.action.productId
+            item.id === data.action.productId
         );
 
         if (product) {
@@ -351,9 +314,46 @@ export default function Home() {
 
       if (
         data.action?.type ===
+        "INCREASE_QUANTITY"
+      ) {
+        const product = products.find(
+          (item) =>
+            item.id === data.action.productId
+        );
+
+        if (product) {
+          addToCart(
+            product,
+            data.action.quantity || 1
+          );
+        }
+      }
+
+      if (
+        data.action?.type ===
+        "DECREASE_QUANTITY"
+      ) {
+        const currentItem = cart.find(
+          (item) =>
+            item.id === data.action.productId
+        );
+
+        if (currentItem) {
+          const amount =
+            data.action.quantity || 1;
+
+          changeQuantity(
+            currentItem.id,
+            currentItem.quantity - amount
+          );
+        }
+      }
+
+      if (
+        data.action?.type ===
         "SET_QUANTITY"
       ) {
-        setProductQuantity(
+        changeQuantity(
           data.action.productId,
           data.action.quantity
         );
@@ -366,34 +366,6 @@ export default function Home() {
         removeFromCart(
           data.action.productId
         );
-      }
-
-      if (
-        data.action?.type ===
-        "INCREASE_QUANTITY"
-      ) {
-        const amount =
-          data.action.amount || 1;
-
-        for (let i = 0; i < amount; i++) {
-          increaseQuantity(
-            data.action.productId
-          );
-        }
-      }
-
-      if (
-        data.action?.type ===
-        "DECREASE_QUANTITY"
-      ) {
-        const amount =
-          data.action.amount || 1;
-
-        for (let i = 0; i < amount; i++) {
-          decreaseQuantity(
-            data.action.productId
-          );
-        }
       }
 
       if (
@@ -417,10 +389,7 @@ export default function Home() {
         },
       ]);
     } catch (error) {
-      console.error(
-        "PharmaAI error:",
-        error
-      );
+      console.error("AI ERROR:", error);
 
       setMessages((previous) => [
         ...previous,
@@ -442,6 +411,10 @@ export default function Home() {
     sendMessage();
   }
 
+  // =========================
+  // CHECKOUT
+  // =========================
+
   function confirmOrder() {
     if (cart.length === 0) return;
 
@@ -459,9 +432,7 @@ export default function Home() {
       <div className="background-glow glow-one" />
       <div className="background-glow glow-two" />
 
-      {/* =========================
-          NAVBAR
-      ========================= */}
+      {/* ================= NAVBAR ================= */}
 
       <nav className="navbar">
         <div className="logo">
@@ -474,9 +445,7 @@ export default function Home() {
               Pharma<span>AI</span>
             </strong>
 
-            <small>
-              Smart Pharmacy
-            </small>
+            <small>Smart Pharmacy</small>
           </div>
         </div>
 
@@ -485,6 +454,8 @@ export default function Home() {
             <span />
             Pharmacy Online
           </div>
+
+          {/* THEME BUTTON */}
 
           <button
             className="theme-button"
@@ -495,8 +466,12 @@ export default function Home() {
             }
             aria-label="Toggle theme"
           >
-            {darkMode ? "☀" : "☾"}
+            <span className="theme-icon">
+              {darkMode ? "☀" : "☾"}
+            </span>
           </button>
+
+          {/* CART BUTTON */}
 
           <button
             className="cart-button"
@@ -512,6 +487,8 @@ export default function Home() {
             )}
           </button>
 
+          {/* AI BUTTON */}
+
           <button
             className={`ai-button ${
               aiOpen ? "active" : ""
@@ -526,16 +503,16 @@ export default function Home() {
               ✦
             </span>
 
-            {aiOpen
-              ? "Close AI"
-              : "Ask PharmaAI"}
+            <span>
+              {aiOpen
+                ? "Close AI"
+                : "Ask PharmaAI"}
+            </span>
           </button>
         </div>
       </nav>
 
-      {/* =========================
-          HERO
-      ========================= */}
+      {/* ================= HERO ================= */}
 
       <section className="hero">
         <div className="hero-text">
@@ -593,10 +570,7 @@ export default function Home() {
           </div>
 
           <div>
-            <strong>
-              PharmaAI
-            </strong>
-
+            <strong>PharmaAI</strong>
             <p>
               Your pharmacy assistant
             </p>
@@ -609,9 +583,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* =========================
-          PRODUCTS
-      ========================= */}
+      {/* ================= PRODUCTS ================= */}
 
       <section
         className="products-section"
@@ -691,9 +663,6 @@ export default function Home() {
                     product.id
                 );
 
-              const quantity =
-                cartItem?.quantity || 0;
-
               return (
                 <div
                   className="product-card"
@@ -727,18 +696,7 @@ export default function Home() {
                       </strong>
                     </div>
 
-                    {quantity === 0 ? (
-                      <button
-                        className="add-cart-button"
-                        onClick={() =>
-                          addToCart(
-                            product
-                          )
-                        }
-                      >
-                        🛒 Add
-                      </button>
-                    ) : (
+                    {cartItem ? (
                       <div className="product-quantity">
                         <button
                           onClick={() =>
@@ -751,7 +709,9 @@ export default function Home() {
                         </button>
 
                         <span>
-                          {quantity}
+                          {
+                            cartItem.quantity
+                          }
                         </span>
 
                         <button
@@ -764,14 +724,23 @@ export default function Home() {
                           +
                         </button>
                       </div>
+                    ) : (
+                      <button
+                        className="add-cart-button"
+                        onClick={() =>
+                          addToCart(
+                            product
+                          )
+                        }
+                      >
+                        🛒 Add
+                      </button>
                     )}
 
                     <button
                       className="ask-product"
                       onClick={() => {
-                        setAiOpen(
-                          true
-                        );
+                        setAiOpen(true);
 
                         sendMessage(
                           `Tell me about ${product.name} and its price.`
@@ -781,6 +750,16 @@ export default function Home() {
                       Ask AI →
                     </button>
                   </div>
+
+                  {cartItem && (
+                    <div className="added-to-cart">
+                      ✓{" "}
+                      {
+                        cartItem.quantity
+                      }{" "}
+                      in cart
+                    </div>
+                  )}
                 </div>
               );
             }
@@ -788,9 +767,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* =========================
-          HOW IT WORKS
-      ========================= */}
+      {/* ================= HOW IT WORKS ================= */}
 
       <section className="how-section">
         <div className="section-label">
@@ -814,8 +791,8 @@ export default function Home() {
 
             <p>
               Explore treatments and
-              cosmetics available in
-              our pharmacy.
+              cosmetics available in our
+              pharmacy.
             </p>
           </div>
 
@@ -852,9 +829,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* =========================
-          FOOTER
-      ========================= */}
+      {/* ================= FOOTER ================= */}
 
       <footer>
         <div className="footer-brand">
@@ -918,17 +893,14 @@ export default function Home() {
               <small>Location</small>
 
               <strong>
-                you looking for location
-                bro we are a website 🤨
+                Online Pharmacy
               </strong>
             </div>
           </div>
         </div>
       </footer>
 
-      {/* =========================
-          FLOATING AI
-      ========================= */}
+      {/* ================= FLOATING AI ================= */}
 
       <button
         className={`floating-ai-button ${
@@ -941,7 +913,6 @@ export default function Home() {
         }
       >
         ✦
-
         <span>
           {aiOpen
             ? "Close"
@@ -949,9 +920,7 @@ export default function Home() {
         </span>
       </button>
 
-      {/* =========================
-          AI PANEL
-      ========================= */}
+      {/* ================= AI PANEL ================= */}
 
       {aiOpen && (
         <div className="ai-panel">
@@ -985,9 +954,9 @@ export default function Home() {
 
           <div className="ai-messages">
             <div className="ai-info">
-              PharmaAI can answer questions
-              about products and prices and
-              help manage your shopping cart.
+              PharmaAI can answer product
+              questions and help manage
+              your shopping cart.
             </div>
 
             {messages.map(
@@ -1009,7 +978,9 @@ export default function Home() {
                   )}
 
                   <div className="message-bubble">
-                    {message.content}
+                    {
+                      message.content
+                    }
                   </div>
                 </div>
               )
@@ -1067,13 +1038,8 @@ export default function Home() {
 
             <button
               onClick={() => {
-                setCartOpen(
-                  true
-                );
-
-                setAiOpen(
-                  false
-                );
+                setCartOpen(true);
+                setAiOpen(false);
               }}
             >
               🛒 My Cart
@@ -1082,9 +1048,7 @@ export default function Home() {
 
           <form
             className="ai-input"
-            onSubmit={
-              handleSubmit
-            }
+            onSubmit={handleSubmit}
           >
             <input
               value={input}
@@ -1116,9 +1080,9 @@ export default function Home() {
         </div>
       )}
 
-      {/* =========================
+      {/* =====================================================
           CART MODAL
-      ========================= */}
+      ===================================================== */}
 
       {cartOpen && (
         <div
@@ -1147,9 +1111,7 @@ export default function Home() {
               <button
                 className="modal-close"
                 onClick={() =>
-                  setCartOpen(
-                    false
-                  )
+                  setCartOpen(false)
                 }
               >
                 ×
@@ -1168,84 +1130,100 @@ export default function Home() {
                   Add some products from
                   the pharmacy menu.
                 </p>
+
+                <button
+                  className="checkout-button"
+                  onClick={() =>
+                    setCartOpen(false)
+                  }
+                >
+                  Continue Shopping
+                </button>
               </div>
             ) : (
               <>
                 <div className="cart-items">
-                  {cart.map(
-                    (item) => (
-                      <div
-                        className="cart-item"
-                        key={item.id}
-                      >
-                        <img
-                          src={
-                            item.image
-                          }
-                          alt={
-                            item.name
-                          }
-                        />
+                  {cart.map((item) => (
+                    <div
+                      className="cart-item"
+                      key={item.id}
+                    >
+                      <img
+                        src={item.image}
+                        alt={item.name}
+                      />
 
-                        <div className="cart-item-info">
-                          <h3>
-                            {
-                              item.name
+                      <div className="cart-item-info">
+                        <h3>
+                          {item.name}
+                        </h3>
+
+                        <p>
+                          EGP{" "}
+                          {item.price}{" "}
+                          each
+                        </p>
+
+                        <div className="quantity">
+                          <button
+                            onClick={() =>
+                              decreaseQuantity(
+                                item.id
+                              )
                             }
-                          </h3>
+                          >
+                            −
+                          </button>
 
-                          <p>
-                            EGP{" "}
+                          <span>
                             {
-                              item.price
+                              item.quantity
                             }
-                          </p>
+                          </span>
 
-                          <div className="quantity">
-                            <button
-                              onClick={() =>
-                                decreaseQuantity(
-                                  item.id
-                                )
-                              }
-                            >
-                              −
-                            </button>
-
-                            <span>
-                              {
-                                item.quantity
-                              }
-                            </span>
-
-                            <button
-                              onClick={() =>
-                                increaseQuantity(
-                                  item.id
-                                )
-                              }
-                            >
-                              +
-                            </button>
-                          </div>
+                          <button
+                            onClick={() =>
+                              increaseQuantity(
+                                item.id
+                              )
+                            }
+                          >
+                            +
+                          </button>
                         </div>
-
-                        <button
-                          className="remove-item"
-                          onClick={() =>
-                            removeFromCart(
-                              item.id
-                            )
-                          }
-                        >
-                          Remove
-                        </button>
                       </div>
-                    )
-                  )}
+
+                      <div className="cart-item-total">
+                        EGP{" "}
+                        {item.price *
+                          item.quantity}
+                      </div>
+
+                      <button
+                        className="remove-item"
+                        onClick={() =>
+                          removeFromCart(
+                            item.id
+                          )
+                        }
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
                 </div>
 
                 <div className="cart-summary">
+                  <div>
+                    <span>
+                      Total Products
+                    </span>
+
+                    <strong>
+                      {cartCount}
+                    </strong>
+                  </div>
+
                   <div>
                     <span>
                       Total
@@ -1265,7 +1243,8 @@ export default function Home() {
                       )
                     }
                   >
-                    Continue to Checkout →
+                    Continue to Checkout
+                    →
                   </button>
                 </div>
               </>
@@ -1274,17 +1253,15 @@ export default function Home() {
         </div>
       )}
 
-      {/* =========================
-          CHECKOUT
-      ========================= */}
+      {/* =====================================================
+          CHECKOUT MODAL
+      ===================================================== */}
 
       {checkoutOpen && (
         <div
           className="modal-overlay"
           onClick={() =>
-            setCheckoutOpen(
-              false
-            )
+            setCheckoutOpen(false)
           }
         >
           <div
@@ -1333,8 +1310,7 @@ export default function Home() {
                 </span>
 
                 <strong>
-                  EGP{" "}
-                  {cartTotal}
+                  EGP {cartTotal}
                 </strong>
               </div>
             </div>
@@ -1361,9 +1337,9 @@ export default function Home() {
         </div>
       )}
 
-      {/* =========================
+      {/* =====================================================
           SUCCESS
-      ========================= */}
+      ===================================================== */}
 
       {orderConfirmed && (
         <div className="success-toast">
