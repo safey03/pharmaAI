@@ -18,143 +18,423 @@ type Message = {
   content: string;
 };
 
+type Action =
+  | {
+      type: "ADD_TO_CART";
+      productId: number;
+      quantity: number;
+    }
+  | {
+      type: "INCREASE_QUANTITY";
+      productId: number;
+      quantity: number;
+    }
+  | {
+      type: "DECREASE_QUANTITY";
+      productId: number;
+      quantity: number;
+    }
+  | {
+      type: "SET_QUANTITY";
+      productId: number;
+      quantity: number;
+    }
+  | {
+      type: "REMOVE_FROM_CART";
+      productId: number;
+    }
+  | {
+      type: "CONFIRM_ORDER";
+    };
+
 export async function POST(request: Request) {
   try {
+    // =========================================
+    // GET GEMINI API KEY
+    // =========================================
+
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
       return NextResponse.json(
         {
           error:
-            "GEMINI_API_KEY is missing from .env.local",
+            "GEMINI_API_KEY is missing. Please add it to Vercel Environment Variables.",
         },
         { status: 500 }
       );
     }
 
+    // =========================================
+    // READ REQUEST BODY
+    // =========================================
+
     const body = await request.json();
 
-    const messages: Message[] = body.messages || [];
-    const products: Product[] = body.products || [];
-    const cart: CartItem[] = body.cart || [];
+    const messages: Message[] = Array.isArray(body.messages)
+      ? body.messages
+      : [];
 
-    const productText = products
-      .map(
-        (product) =>
-          `ID: ${product.id}
+    const products: Product[] = Array.isArray(body.products)
+      ? body.products
+      : [];
+
+    const cart: CartItem[] = Array.isArray(body.cart)
+      ? body.cart
+      : [];
+
+    // =========================================
+    // PRODUCTS INFORMATION
+    // =========================================
+
+    const productText =
+      products.length > 0
+        ? products
+            .map(
+              (product) => `
+ID: ${product.id}
 Name: ${product.name}
 Category: ${product.category}
 Price: EGP ${product.price}
-Description: ${product.description}`
-      )
-      .join("\n\n");
+Description: ${product.description}
+`
+            )
+            .join("\n")
+        : "No products available.";
+
+    // =========================================
+    // CURRENT CART
+    // =========================================
 
     const cartText =
       cart.length > 0
         ? cart
             .map(
-              (item) =>
-                `Product ID: ${item.id}
+              (item) => `
+Product ID: ${item.id}
 Product: ${item.name}
 Current Quantity: ${item.quantity}
-Price: EGP ${item.price}`
+Price: EGP ${item.price}
+`
             )
-            .join("\n\n")
+            .join("\n")
         : "The cart is currently empty.";
+
+    // =========================================
+    // CONVERSATION
+    // =========================================
 
     const conversation = messages
       .map(
         (message) =>
-          `${message.role === "user" ? "Customer" : "PharmaAI"}: ${
-            message.content
-          }`
+          `${
+            message.role === "user"
+              ? "Customer"
+              : "PharmaAI"
+          }: ${message.content}`
       )
       .join("\n");
 
+    // =========================================
+    // GEMINI PROMPT
+    // =========================================
+
     const prompt = `
-You are PharmaAI, the AI assistant for a pharmacy website.
+You are PharmaAI, an AI shopping assistant for a pharmacy website.
+
+Your job is to help customers with ONLY:
+
+- Pharmacy products listed below
+- Product names
+- Product categories
+- Product prices
+- Product descriptions
+- Shopping cart
+- Adding products to the cart
+- Increasing quantities
+- Decreasing quantities
+- Setting quantities
+- Removing products
+- Confirming orders
 
 IMPORTANT RULES:
 
-1. Only answer questions about the products listed below and the shopping cart.
-2. You can explain product name, category, price and description.
-3. Do not invent products, prices or information.
-4. Do not diagnose medical conditions.
-5. Do not prescribe medicines or tell the customer what medicine they should take.
-6. If the customer asks for medical advice, politely tell them to ask a doctor or pharmacist.
-7. Keep answers short and friendly.
-8. You can help the customer manage their shopping cart.
-9. The customer can ask you to add, increase, decrease, set or remove quantities.
-10. ALWAYS use the exact product ID from the available products.
-11. Never invent a product ID.
+1. Only talk about the products listed below and the shopping cart.
 
-CART ACTIONS:
+2. Never invent a product.
 
-If the customer clearly wants to ADD one or more of a product, use:
+3. Never invent a price.
 
-[ACTION:SET_QUANTITY:PRODUCT_ID:QUANTITY]
+4. Never invent a product ID.
 
-Example:
-[ACTION:SET_QUANTITY:3:2]
+5. ALWAYS use the exact Product ID from the AVAILABLE PRODUCTS section.
 
-This means product 3 should have quantity 2.
+6. Do not diagnose medical conditions.
 
-If the customer says:
-"add 2 Panadol"
-and the current quantity is 1,
-the new quantity should be 3.
+7. Do not prescribe medicines.
 
-If the customer says:
-"make Panadol 5"
-the new quantity should be exactly 5.
+8. If the customer asks for diagnosis or medical treatment advice, politely tell them to consult a doctor or pharmacist.
 
-If the customer says:
-"remove Panadol"
-or
-"delete Panadol"
-use quantity 0.
+9. Keep responses short, clear and friendly.
 
-Example:
-[ACTION:SET_QUANTITY:1:0]
+10. You are a shopping assistant, not a doctor.
 
-12. You can only use ONE SET_QUANTITY action per response.
-13. If the customer asks to change multiple products at once, use multiple action lines.
-
-Example:
-[ACTION:SET_QUANTITY:1:3]
-[ACTION:SET_QUANTITY:3:2]
-
-14. If the customer confirms the entire order, use:
-
-[ACTION:CONFIRM_ORDER]
-
-15. Only use CONFIRM_ORDER when the customer clearly confirms the order.
-16. Never confirm an order just because the customer asks about the cart.
-17. Never use a quantity below 0.
-18. Quantities must be whole numbers.
-19. If the customer asks to decrease a quantity, look at the CURRENT CART first and calculate the new quantity.
-20. If the requested quantity becomes 0, use quantity 0.
-21. If a product is not currently in the cart and the customer says "decrease it", explain that it is not in the cart.
-22. If the customer says "add one" to a product already in the cart, increase its current quantity by 1.
-23. If the customer says "add 3" to a product already in the cart, increase its current quantity by 3.
-24. If the customer says "make it 3", set the quantity to exactly 3.
-
-AVAILABLE PRODUCTS:
+=========================================
+AVAILABLE PRODUCTS
+=========================================
 
 ${productText}
 
-CURRENT SHOPPING CART:
+=========================================
+CURRENT SHOPPING CART
+=========================================
 
 ${cartText}
 
-CONVERSATION:
+=========================================
+CART ACTIONS
+=========================================
+
+When the customer wants to add a product that is NOT currently in the cart:
+
+Use:
+
+[ACTION:ADD_TO_CART:PRODUCT_ID:QUANTITY]
+
+Example:
+
+[ACTION:ADD_TO_CART:1:1]
+
+If the customer says:
+
+"Add Panadol Extra"
+
+and Panadol Extra is not in the cart, use:
+
+[ACTION:ADD_TO_CART:1:1]
+
+If the customer says:
+
+"Add 3 Panadol Extra"
+
+use:
+
+[ACTION:ADD_TO_CART:1:3]
+
+=========================================
+
+INCREASE QUANTITY
+=========================================
+
+If the product is already in the cart and the customer says:
+
+"Add one more Panadol"
+
+use:
+
+[ACTION:INCREASE_QUANTITY:1:1]
+
+If the customer says:
+
+"Add 3 more Panadol"
+
+use:
+
+[ACTION:INCREASE_QUANTITY:1:3]
+
+=========================================
+
+DECREASE QUANTITY
+=========================================
+
+If the customer says:
+
+"Decrease Panadol"
+
+use:
+
+[ACTION:DECREASE_QUANTITY:1:1]
+
+If the customer says:
+
+"Remove 2 Panadol"
+
+DO NOT use REMOVE_FROM_CART.
+
+Instead use:
+
+[ACTION:DECREASE_QUANTITY:1:2]
+
+If the resulting quantity becomes zero, the website will remove the product automatically.
+
+=========================================
+
+SET EXACT QUANTITY
+=========================================
+
+If the customer says:
+
+"Make Panadol quantity 5"
+
+use:
+
+[ACTION:SET_QUANTITY:1:5]
+
+If the customer says:
+
+"Set Panadol to 3"
+
+use:
+
+[ACTION:SET_QUANTITY:1:3]
+
+=========================================
+
+REMOVE PRODUCT
+=========================================
+
+If the customer says:
+
+"Remove Panadol from my cart"
+
+or:
+
+"Delete Panadol"
+
+use:
+
+[ACTION:REMOVE_FROM_CART:1]
+
+=========================================
+
+CONFIRM ORDER
+=========================================
+
+ONLY when the customer clearly confirms the entire order, use:
+
+[ACTION:CONFIRM_ORDER]
+
+Examples:
+
+"Confirm my order"
+
+"Place the order"
+
+"Yes, confirm it"
+
+"Checkout"
+
+Do NOT use CONFIRM_ORDER when the customer only asks:
+
+"What is in my cart?"
+
+"Show my cart"
+
+"How much is my cart?"
+
+=========================================
+
+IMPORTANT CART LOGIC
+=========================================
+
+Before performing an action, look at CURRENT SHOPPING CART.
+
+If the customer says:
+
+"Add Panadol"
+
+and Panadol is already in the cart:
+
+Use INCREASE_QUANTITY.
+
+If Panadol is not in the cart:
+
+Use ADD_TO_CART.
+
+If the customer says:
+
+"Add 3 Panadol"
+
+and current quantity is 2:
+
+Use:
+
+[ACTION:INCREASE_QUANTITY:1:3]
+
+Do NOT use SET_QUANTITY:1:3.
+
+If the customer says:
+
+"Make Panadol 3"
+
+use:
+
+[ACTION:SET_QUANTITY:1:3]
+
+If the customer says:
+
+"Remove Panadol"
+
+use:
+
+[ACTION:REMOVE_FROM_CART:1]
+
+If the customer says:
+
+"Decrease Panadol by 2"
+
+use:
+
+[ACTION:DECREASE_QUANTITY:1:2]
+
+If the product is not in the cart and the customer asks to decrease it, explain that the product is not currently in the cart.
+
+Never use a negative quantity.
+
+Quantities must always be whole numbers.
+
+=========================================
+RESPONSE FORMAT
+=========================================
+
+First write a short friendly response to the customer.
+
+Then, if a cart action is needed, put EXACTLY ONE action at the END.
+
+Example:
+
+"Sure! I've added Panadol Extra to your cart.
+
+[ACTION:ADD_TO_CART:1:1]"
+
+Another example:
+
+"Done! I've increased Panadol Extra by 2.
+
+[ACTION:INCREASE_QUANTITY:1:2]"
+
+Another example:
+
+"Your order has been confirmed.
+
+[ACTION:CONFIRM_ORDER]"
+
+Do not explain the action syntax to the customer.
+
+=========================================
+CONVERSATION
+=========================================
 
 ${conversation}
 
-Answer the customer's latest message.
+=========================================
 
-If you perform a cart action, put the action at the END of your response.
+Answer the customer's latest message.
 `;
+
+    // =========================================
+    // GEMINI
+    // =========================================
 
     const ai = new GoogleGenAI({
       apiKey,
@@ -169,48 +449,205 @@ If you perform a cart action, put the action at the END of your response.
       response.text?.trim() ||
       "Sorry, I couldn't generate a response.";
 
-    const actions: Array<
-      | {
-          type: "SET_QUANTITY";
-          productId: number;
-          quantity: number;
-        }
-      | {
-          type: "CONFIRM_ORDER";
-        }
-    > = [];
+    // =========================================
+    // PARSE ACTION
+    // =========================================
 
-    const quantityRegex =
-      /\[ACTION:SET_QUANTITY:(\d+):(\d+)\]/g;
+    let action: Action | null = null;
 
-    let match;
+    // -----------------------------------------
+    // ADD TO CART
+    // -----------------------------------------
 
-    while ((match = quantityRegex.exec(text)) !== null) {
-      const productId = Number(match[1]);
-      const quantity = Math.max(0, Number(match[2]));
+    const addMatch = text.match(
+      /\[ACTION:ADD_TO_CART:(\d+):(\d+)\]/
+    );
+
+    if (addMatch) {
+      const productId = Number(addMatch[1]);
+      const quantity = Math.max(
+        1,
+        Number(addMatch[2])
+      );
 
       const productExists = products.some(
         (product) => product.id === productId
       );
 
       if (productExists) {
-        actions.push({
-          type: "SET_QUANTITY",
+        action = {
+          type: "ADD_TO_CART",
           productId,
           quantity,
-        });
+        };
       }
     }
 
-    if (text.includes("[ACTION:CONFIRM_ORDER]")) {
-      actions.push({
-        type: "CONFIRM_ORDER",
-      });
+    // -----------------------------------------
+    // INCREASE QUANTITY
+    // -----------------------------------------
+
+    if (!action) {
+      const increaseMatch = text.match(
+        /\[ACTION:INCREASE_QUANTITY:(\d+):(\d+)\]/
+      );
+
+      if (increaseMatch) {
+        const productId = Number(
+          increaseMatch[1]
+        );
+
+        const quantity = Math.max(
+          1,
+          Number(increaseMatch[2])
+        );
+
+        const productExists = products.some(
+          (product) => product.id === productId
+        );
+
+        if (productExists) {
+          action = {
+            type: "INCREASE_QUANTITY",
+            productId,
+            quantity,
+          };
+        }
+      }
     }
+
+    // -----------------------------------------
+    // DECREASE QUANTITY
+    // -----------------------------------------
+
+    if (!action) {
+      const decreaseMatch = text.match(
+        /\[ACTION:DECREASE_QUANTITY:(\d+):(\d+)\]/
+      );
+
+      if (decreaseMatch) {
+        const productId = Number(
+          decreaseMatch[1]
+        );
+
+        const quantity = Math.max(
+          1,
+          Number(decreaseMatch[2])
+        );
+
+        const productExists = products.some(
+          (product) => product.id === productId
+        );
+
+        if (productExists) {
+          action = {
+            type: "DECREASE_QUANTITY",
+            productId,
+            quantity,
+          };
+        }
+      }
+    }
+
+    // -----------------------------------------
+    // SET QUANTITY
+    // -----------------------------------------
+
+    if (!action) {
+      const setMatch = text.match(
+        /\[ACTION:SET_QUANTITY:(\d+):(\d+)\]/
+      );
+
+      if (setMatch) {
+        const productId = Number(
+          setMatch[1]
+        );
+
+        const quantity = Math.max(
+          0,
+          Number(setMatch[2])
+        );
+
+        const productExists = products.some(
+          (product) => product.id === productId
+        );
+
+        if (productExists) {
+          action = {
+            type: "SET_QUANTITY",
+            productId,
+            quantity,
+          };
+        }
+      }
+    }
+
+    // -----------------------------------------
+    // REMOVE FROM CART
+    // -----------------------------------------
+
+    if (!action) {
+      const removeMatch = text.match(
+        /\[ACTION:REMOVE_FROM_CART:(\d+)\]/
+      );
+
+      if (removeMatch) {
+        const productId = Number(
+          removeMatch[1]
+        );
+
+        const productExists = products.some(
+          (product) => product.id === productId
+        );
+
+        if (productExists) {
+          action = {
+            type: "REMOVE_FROM_CART",
+            productId,
+          };
+        }
+      }
+    }
+
+    // -----------------------------------------
+    // CONFIRM ORDER
+    // -----------------------------------------
+
+    if (!action) {
+      if (
+        text.includes(
+          "[ACTION:CONFIRM_ORDER]"
+        )
+      ) {
+        action = {
+          type: "CONFIRM_ORDER",
+        };
+      }
+    }
+
+    // =========================================
+    // CLEAN AI MESSAGE
+    // =========================================
 
     const cleanMessage = text
       .replace(
+        /\[ACTION:ADD_TO_CART:\d+:\d+\]/g,
+        ""
+      )
+      .replace(
+        /\[ACTION:INCREASE_QUANTITY:\d+:\d+\]/g,
+        ""
+      )
+      .replace(
+        /\[ACTION:DECREASE_QUANTITY:\d+:\d+\]/g,
+        ""
+      )
+      .replace(
         /\[ACTION:SET_QUANTITY:\d+:\d+\]/g,
+        ""
+      )
+      .replace(
+        /\[ACTION:REMOVE_FROM_CART:\d+\]/g,
         ""
       )
       .replace(
@@ -219,14 +656,21 @@ If you perform a cart action, put the action at the END of your response.
       )
       .trim();
 
+    // =========================================
+    // RETURN RESPONSE
+    // =========================================
+
     return NextResponse.json({
       message:
         cleanMessage ||
         "Done! I've updated your cart.",
-      actions,
+      action,
     });
   } catch (error) {
-    console.error("PHARMA AI ERROR:", error);
+    console.error(
+      "PHARMA AI ERROR:",
+      error
+    );
 
     return NextResponse.json(
       {

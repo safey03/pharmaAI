@@ -25,6 +25,35 @@ type CartItem = Product & {
   quantity: number;
 };
 
+type AIAction =
+  | {
+      type: "ADD_TO_CART";
+      productId: number;
+      quantity: number;
+    }
+  | {
+      type: "INCREASE_QUANTITY";
+      productId: number;
+      quantity: number;
+    }
+  | {
+      type: "DECREASE_QUANTITY";
+      productId: number;
+      quantity: number;
+    }
+  | {
+      type: "SET_QUANTITY";
+      productId: number;
+      quantity: number;
+    }
+  | {
+      type: "REMOVE_FROM_CART";
+      productId: number;
+    }
+  | {
+      type: "CONFIRM_ORDER";
+    };
+
 const products: Product[] = [
   {
     id: 1,
@@ -116,8 +145,6 @@ export default function Home() {
   const [cartOpen, setCartOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [orderConfirmed, setOrderConfirmed] = useState(false);
-
-  // DARK MODE
   const [darkMode, setDarkMode] = useState(true);
 
   const [input, setInput] = useState("");
@@ -133,7 +160,8 @@ export default function Home() {
     },
   ]);
 
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const messagesEndRef =
+    useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
@@ -159,9 +187,9 @@ export default function Home() {
     0
   );
 
-  // =========================
-  // CART FUNCTIONS
-  // =========================
+  // =========================================
+  // ADD TO CART
+  // =========================================
 
   function addToCart(
     product: Product,
@@ -195,6 +223,65 @@ export default function Home() {
     });
   }
 
+  // =========================================
+  // SET CART QUANTITY
+  // =========================================
+
+  function setCartQuantity(
+    productId: number,
+    quantity: number
+  ) {
+    if (quantity <= 0) {
+      setCart((previous) =>
+        previous.filter(
+          (item) => item.id !== productId
+        )
+      );
+
+      return;
+    }
+
+    setCart((previous) => {
+      const exists = previous.some(
+        (item) => item.id === productId
+      );
+
+      // Product already exists
+      if (exists) {
+        return previous.map((item) =>
+          item.id === productId
+            ? {
+                ...item,
+                quantity,
+              }
+            : item
+        );
+      }
+
+      // Product doesn't exist
+      // Add it directly
+      const product = products.find(
+        (item) => item.id === productId
+      );
+
+      if (!product) {
+        return previous;
+      }
+
+      return [
+        ...previous,
+        {
+          ...product,
+          quantity,
+        },
+      ];
+    });
+  }
+
+  // =========================================
+  // INCREASE QUANTITY
+  // =========================================
+
   function increaseQuantity(productId: number) {
     setCart((previous) =>
       previous.map((item) =>
@@ -207,6 +294,10 @@ export default function Home() {
       )
     );
   }
+
+  // =========================================
+  // DECREASE QUANTITY
+  // =========================================
 
   function decreaseQuantity(productId: number) {
     setCart((previous) =>
@@ -223,6 +314,10 @@ export default function Home() {
     );
   }
 
+  // =========================================
+  // REMOVE FROM CART
+  // =========================================
+
   function removeFromCart(productId: number) {
     setCart((previous) =>
       previous.filter(
@@ -230,6 +325,10 @@ export default function Home() {
       )
     );
   }
+
+  // =========================================
+  // CHANGE QUANTITY
+  // =========================================
 
   function changeQuantity(
     productId: number,
@@ -240,21 +339,111 @@ export default function Home() {
       return;
     }
 
-    setCart((previous) =>
-      previous.map((item) =>
-        item.id === productId
-          ? {
-              ...item,
-              quantity,
-            }
-          : item
-      )
-    );
+    setCartQuantity(productId, quantity);
   }
 
-  // =========================
-  // AI
-  // =========================
+  // =========================================
+  // AI ACTION HANDLER
+  // =========================================
+
+  function handleAIAction(action: AIAction) {
+    if (action.type === "ADD_TO_CART") {
+      const product = products.find(
+        (item) => item.id === action.productId
+      );
+
+      if (product) {
+        addToCart(
+          product,
+          action.quantity || 1
+        );
+      }
+
+      return;
+    }
+
+    if (action.type === "INCREASE_QUANTITY") {
+      const product = products.find(
+        (item) => item.id === action.productId
+      );
+
+      if (!product) return;
+
+      setCart((previous) => {
+        const exists = previous.some(
+          (item) => item.id === action.productId
+        );
+
+        if (!exists) {
+          return [
+            ...previous,
+            {
+              ...product,
+              quantity: action.quantity || 1,
+            },
+          ];
+        }
+
+        return previous.map((item) =>
+          item.id === action.productId
+            ? {
+                ...item,
+                quantity:
+                  item.quantity +
+                  (action.quantity || 1),
+              }
+            : item
+        );
+      });
+
+      return;
+    }
+
+    if (action.type === "DECREASE_QUANTITY") {
+      setCart((previous) =>
+        previous
+          .map((item) =>
+            item.id === action.productId
+              ? {
+                  ...item,
+                  quantity:
+                    item.quantity -
+                    (action.quantity || 1),
+                }
+              : item
+          )
+          .filter(
+            (item) => item.quantity > 0
+          )
+      );
+
+      return;
+    }
+
+    if (action.type === "SET_QUANTITY") {
+      setCartQuantity(
+        action.productId,
+        action.quantity
+      );
+
+      return;
+    }
+
+    if (action.type === "REMOVE_FROM_CART") {
+      removeFromCart(action.productId);
+      return;
+    }
+
+    if (action.type === "CONFIRM_ORDER") {
+      setOrderConfirmed(true);
+      setCheckoutOpen(false);
+      setCartOpen(false);
+    }
+  }
+
+  // =========================================
+  // SEND AI MESSAGE
+  // =========================================
 
   async function sendMessage(text = input) {
     if (!text.trim() || loading) return;
@@ -294,90 +483,29 @@ export default function Home() {
         );
       }
 
-      // =========================
-      // AI CART ACTIONS
-      // =========================
+      // =========================================
+      // PROCESS AI ACTION
+      // =========================================
 
-      if (data.action?.type === "ADD_TO_CART") {
-        const product = products.find(
-          (item) =>
-            item.id === data.action.productId
-        );
-
-        if (product) {
-          addToCart(
-            product,
-            data.action.quantity || 1
-          );
-        }
-      }
-
-      if (
-        data.action?.type ===
-        "INCREASE_QUANTITY"
-      ) {
-        const product = products.find(
-          (item) =>
-            item.id === data.action.productId
-        );
-
-        if (product) {
-          addToCart(
-            product,
-            data.action.quantity || 1
-          );
-        }
-      }
-
-      if (
-        data.action?.type ===
-        "DECREASE_QUANTITY"
-      ) {
-        const currentItem = cart.find(
-          (item) =>
-            item.id === data.action.productId
-        );
-
-        if (currentItem) {
-          const amount =
-            data.action.quantity || 1;
-
-          changeQuantity(
-            currentItem.id,
-            currentItem.quantity - amount
-          );
-        }
-      }
-
-      if (
-        data.action?.type ===
-        "SET_QUANTITY"
-      ) {
-        changeQuantity(
-          data.action.productId,
-          data.action.quantity
+      if (data.action) {
+        handleAIAction(
+          data.action as AIAction
         );
       }
 
+      // Support old route format too
       if (
-        data.action?.type ===
-        "REMOVE_FROM_CART"
+        Array.isArray(data.actions)
       ) {
-        removeFromCart(
-          data.action.productId
+        data.actions.forEach(
+          (action: AIAction) =>
+            handleAIAction(action)
         );
       }
 
-      if (
-        data.action?.type ===
-        "CONFIRM_ORDER"
-      ) {
-        if (cart.length > 0) {
-          setOrderConfirmed(true);
-          setCheckoutOpen(false);
-          setCartOpen(false);
-        }
-      }
+      // =========================================
+      // ADD AI RESPONSE
+      // =========================================
 
       setMessages((previous) => [
         ...previous,
@@ -389,7 +517,10 @@ export default function Home() {
         },
       ]);
     } catch (error) {
-      console.error("AI ERROR:", error);
+      console.error(
+        "AI ERROR:",
+        error
+      );
 
       setMessages((previous) => [
         ...previous,
@@ -404,6 +535,10 @@ export default function Home() {
     }
   }
 
+  // =========================================
+  // FORM SUBMIT
+  // =========================================
+
   function handleSubmit(
     event: FormEvent<HTMLFormElement>
   ) {
@@ -411,9 +546,9 @@ export default function Home() {
     sendMessage();
   }
 
-  // =========================
-  // CHECKOUT
-  // =========================
+  // =========================================
+  // CONFIRM ORDER
+  // =========================================
 
   function confirmOrder() {
     if (cart.length === 0) return;
@@ -436,9 +571,7 @@ export default function Home() {
 
       <nav className="navbar">
         <div className="logo">
-          <div className="logo-icon">
-            ✚
-          </div>
+          <div className="logo-icon">✚</div>
 
           <div>
             <strong>
@@ -455,9 +588,8 @@ export default function Home() {
             Pharmacy Online
           </div>
 
-          {/* THEME BUTTON */}
-
           <button
+            type="button"
             className="theme-button"
             onClick={() =>
               setDarkMode(
@@ -466,14 +598,11 @@ export default function Home() {
             }
             aria-label="Toggle theme"
           >
-            <span className="theme-icon">
-              {darkMode ? "☀" : "☾"}
-            </span>
+            {darkMode ? "☀" : "☾"}
           </button>
 
-          {/* CART BUTTON */}
-
           <button
+            type="button"
             className="cart-button"
             onClick={() =>
               setCartOpen(true)
@@ -487,9 +616,8 @@ export default function Home() {
             )}
           </button>
 
-          {/* AI BUTTON */}
-
           <button
+            type="button"
             className={`ai-button ${
               aiOpen ? "active" : ""
             }`}
@@ -523,26 +651,22 @@ export default function Home() {
           <h1>
             Your health.
             <br />
-            <span>
-              Smarter choices.
-            </span>
+            <span>Smarter choices.</span>
           </h1>
 
           <p>
-            Explore our treatments and
-            cosmetics, check prices, add
-            products to your cart, and ask
-            PharmaAI about our pharmacy.
+            Explore our treatments and cosmetics,
+            check prices, add products to your cart,
+            and ask PharmaAI about our pharmacy.
           </p>
 
           <div className="hero-actions">
             <button
+              type="button"
               className="primary-button"
               onClick={() =>
                 document
-                  .getElementById(
-                    "products"
-                  )
+                  .getElementById("products")
                   ?.scrollIntoView({
                     behavior: "smooth",
                   })
@@ -553,6 +677,7 @@ export default function Home() {
             </button>
 
             <button
+              type="button"
               className="secondary-button"
               onClick={() =>
                 setAiOpen(true)
@@ -571,9 +696,7 @@ export default function Home() {
 
           <div>
             <strong>PharmaAI</strong>
-            <p>
-              Your pharmacy assistant
-            </p>
+            <p>Your pharmacy assistant</p>
           </div>
 
           <div className="hero-card-status">
@@ -600,13 +723,14 @@ export default function Home() {
             </h2>
 
             <p>
-              Treatments and cosmetics
-              available in our pharmacy.
+              Treatments and cosmetics available
+              in our pharmacy.
             </p>
           </div>
 
           <div className="category-menu">
             <button
+              type="button"
               className={
                 category === "All"
                   ? "selected"
@@ -620,9 +744,9 @@ export default function Home() {
             </button>
 
             <button
+              type="button"
               className={
-                category ===
-                "Treatment"
+                category === "Treatment"
                   ? "selected"
                   : ""
               }
@@ -636,9 +760,9 @@ export default function Home() {
             </button>
 
             <button
+              type="button"
               className={
-                category ===
-                "Cosmetics"
+                category === "Cosmetics"
                   ? "selected"
                   : ""
               }
@@ -656,12 +780,10 @@ export default function Home() {
         <div className="products-grid">
           {filteredProducts.map(
             (product) => {
-              const cartItem =
-                cart.find(
-                  (item) =>
-                    item.id ===
-                    product.id
-                );
+              const cartItem = cart.find(
+                (item) =>
+                  item.id === product.id
+              );
 
               return (
                 <div
@@ -680,9 +802,7 @@ export default function Home() {
                     {product.category}
                   </div>
 
-                  <h3>
-                    {product.name}
-                  </h3>
+                  <h3>{product.name}</h3>
 
                   <p>
                     {product.description}
@@ -691,14 +811,14 @@ export default function Home() {
                   <div className="product-bottom">
                     <div className="price">
                       <strong>
-                        EGP{" "}
-                        {product.price}
+                        EGP {product.price}
                       </strong>
                     </div>
 
                     {cartItem ? (
                       <div className="product-quantity">
                         <button
+                          type="button"
                           onClick={() =>
                             decreaseQuantity(
                               product.id
@@ -709,12 +829,11 @@ export default function Home() {
                         </button>
 
                         <span>
-                          {
-                            cartItem.quantity
-                          }
+                          {cartItem.quantity}
                         </span>
 
                         <button
+                          type="button"
                           onClick={() =>
                             increaseQuantity(
                               product.id
@@ -726,11 +845,10 @@ export default function Home() {
                       </div>
                     ) : (
                       <button
+                        type="button"
                         className="add-cart-button"
                         onClick={() =>
-                          addToCart(
-                            product
-                          )
+                          addToCart(product)
                         }
                       >
                         🛒 Add
@@ -738,6 +856,7 @@ export default function Home() {
                     )}
 
                     <button
+                      type="button"
                       className="ask-product"
                       onClick={() => {
                         setAiOpen(true);
@@ -753,11 +872,7 @@ export default function Home() {
 
                   {cartItem && (
                     <div className="added-to-cart">
-                      ✓{" "}
-                      {
-                        cartItem.quantity
-                      }{" "}
-                      in cart
+                      ✓ {cartItem.quantity} in cart
                     </div>
                   )}
                 </div>
@@ -785,14 +900,11 @@ export default function Home() {
               01
             </div>
 
-            <h3>
-              Browse products
-            </h3>
+            <h3>Browse products</h3>
 
             <p>
-              Explore treatments and
-              cosmetics available in our
-              pharmacy.
+              Explore treatments and cosmetics
+              available in our pharmacy.
             </p>
           </div>
 
@@ -801,13 +913,11 @@ export default function Home() {
               02
             </div>
 
-            <h3>
-              Build your cart
-            </h3>
+            <h3>Build your cart</h3>
 
             <p>
-              Add products and adjust
-              quantities before checkout.
+              Add products and adjust quantities
+              before checkout.
             </p>
           </div>
 
@@ -816,14 +926,11 @@ export default function Home() {
               03
             </div>
 
-            <h3>
-              Ask PharmaAI
-            </h3>
+            <h3>Ask PharmaAI</h3>
 
             <p>
-              Let the AI help you find
-              products and manage your
-              shopping cart.
+              Let the AI help you find products and
+              manage your shopping cart.
             </p>
           </div>
         </div>
@@ -834,9 +941,7 @@ export default function Home() {
       <footer>
         <div className="footer-brand">
           <div className="logo">
-            <div className="logo-icon">
-              ✚
-            </div>
+            <div className="logo-icon">✚</div>
 
             <strong>
               Pharma<span>AI</span>
@@ -844,8 +949,8 @@ export default function Home() {
           </div>
 
           <p>
-            Smart pharmacy starts with
-            better information.
+            Smart pharmacy starts with better
+            information.
           </p>
         </div>
 
@@ -860,7 +965,6 @@ export default function Home() {
 
             <div>
               <small>Email</small>
-
               <strong>
                 pharmai@gmail.com
               </strong>
@@ -877,7 +981,6 @@ export default function Home() {
 
             <div>
               <small>Phone</small>
-
               <strong>
                 01098729519
               </strong>
@@ -891,7 +994,6 @@ export default function Home() {
 
             <div>
               <small>Location</small>
-
               <strong>
                 Online Pharmacy
               </strong>
@@ -903,6 +1005,7 @@ export default function Home() {
       {/* ================= FLOATING AI ================= */}
 
       <button
+        type="button"
         className={`floating-ai-button ${
           aiOpen ? "opened" : ""
         }`}
@@ -914,9 +1017,7 @@ export default function Home() {
       >
         ✦
         <span>
-          {aiOpen
-            ? "Close"
-            : "Ask AI"}
+          {aiOpen ? "Close" : "Ask AI"}
         </span>
       </button>
 
@@ -931,9 +1032,7 @@ export default function Home() {
               </div>
 
               <div>
-                <h3>
-                  PharmaAI
-                </h3>
+                <h3>PharmaAI</h3>
 
                 <p>
                   <span />
@@ -943,6 +1042,7 @@ export default function Home() {
             </div>
 
             <button
+              type="button"
               className="close-ai"
               onClick={() =>
                 setAiOpen(false)
@@ -954,9 +1054,8 @@ export default function Home() {
 
           <div className="ai-messages">
             <div className="ai-info">
-              PharmaAI can answer product
-              questions and help manage
-              your shopping cart.
+              PharmaAI can answer product questions
+              and help manage your shopping cart.
             </div>
 
             {messages.map(
@@ -964,8 +1063,7 @@ export default function Home() {
                 <div
                   key={index}
                   className={`ai-message ${
-                    message.role ===
-                    "user"
+                    message.role === "user"
                       ? "user"
                       : "assistant"
                   }`}
@@ -978,9 +1076,7 @@ export default function Home() {
                   )}
 
                   <div className="message-bubble">
-                    {
-                      message.content
-                    }
+                    {message.content}
                   </div>
                 </div>
               )
@@ -1000,13 +1096,12 @@ export default function Home() {
               </div>
             )}
 
-            <div
-              ref={messagesEndRef}
-            />
+            <div ref={messagesEndRef} />
           </div>
 
           <div className="quick-questions">
             <button
+              type="button"
               onClick={() =>
                 sendMessage(
                   "What treatments do you have?"
@@ -1017,6 +1112,7 @@ export default function Home() {
             </button>
 
             <button
+              type="button"
               onClick={() =>
                 sendMessage(
                   "What cosmetics do you have?"
@@ -1027,6 +1123,7 @@ export default function Home() {
             </button>
 
             <button
+              type="button"
               onClick={() =>
                 sendMessage(
                   "Show me the prices of your products."
@@ -1037,6 +1134,7 @@ export default function Home() {
             </button>
 
             <button
+              type="button"
               onClick={() => {
                 setCartOpen(true);
                 setAiOpen(false);
@@ -1053,9 +1151,7 @@ export default function Home() {
             <input
               value={input}
               onChange={(event) =>
-                setInput(
-                  event.target.value
-                )
+                setInput(event.target.value)
               }
               placeholder="Ask about a product..."
               disabled={loading}
@@ -1073,16 +1169,14 @@ export default function Home() {
           </form>
 
           <div className="ai-disclaimer">
-            Product information only •
-            General information does not
-            replace a doctor or pharmacist.
+            Product information only • General
+            information does not replace a doctor
+            or pharmacist.
           </div>
         </div>
       )}
 
-      {/* =====================================================
-          CART MODAL
-      ===================================================== */}
+      {/* ================= CART ================= */}
 
       {cartOpen && (
         <div
@@ -1099,16 +1193,12 @@ export default function Home() {
           >
             <div className="modal-header">
               <div>
-                <small>
-                  SHOPPING CART
-                </small>
-
-                <h2>
-                  Your Cart
-                </h2>
+                <small>SHOPPING CART</small>
+                <h2>Your Cart</h2>
               </div>
 
               <button
+                type="button"
                 className="modal-close"
                 onClick={() =>
                   setCartOpen(false)
@@ -1127,18 +1217,9 @@ export default function Home() {
                 </h3>
 
                 <p>
-                  Add some products from
-                  the pharmacy menu.
+                  Add some products from the
+                  pharmacy menu.
                 </p>
-
-                <button
-                  className="checkout-button"
-                  onClick={() =>
-                    setCartOpen(false)
-                  }
-                >
-                  Continue Shopping
-                </button>
               </div>
             ) : (
               <>
@@ -1159,13 +1240,12 @@ export default function Home() {
                         </h3>
 
                         <p>
-                          EGP{" "}
-                          {item.price}{" "}
-                          each
+                          EGP {item.price} each
                         </p>
 
                         <div className="quantity">
                           <button
+                            type="button"
                             onClick={() =>
                               decreaseQuantity(
                                 item.id
@@ -1176,12 +1256,11 @@ export default function Home() {
                           </button>
 
                           <span>
-                            {
-                              item.quantity
-                            }
+                            {item.quantity}
                           </span>
 
                           <button
+                            type="button"
                             onClick={() =>
                               increaseQuantity(
                                 item.id
@@ -1200,6 +1279,7 @@ export default function Home() {
                       </div>
 
                       <button
+                        type="button"
                         className="remove-item"
                         onClick={() =>
                           removeFromCart(
@@ -1215,36 +1295,27 @@ export default function Home() {
 
                 <div className="cart-summary">
                   <div>
-                    <span>
-                      Total Products
-                    </span>
-
+                    <span>Total Products</span>
                     <strong>
                       {cartCount}
                     </strong>
                   </div>
 
                   <div>
-                    <span>
-                      Total
-                    </span>
-
+                    <span>Total</span>
                     <strong>
-                      EGP{" "}
-                      {cartTotal}
+                      EGP {cartTotal}
                     </strong>
                   </div>
 
                   <button
+                    type="button"
                     className="checkout-button"
                     onClick={() =>
-                      setCheckoutOpen(
-                        true
-                      )
+                      setCheckoutOpen(true)
                     }
                   >
-                    Continue to Checkout
-                    →
+                    Continue to Checkout →
                   </button>
                 </div>
               </>
@@ -1253,9 +1324,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* =====================================================
-          CHECKOUT MODAL
-      ===================================================== */}
+      {/* ================= CHECKOUT ================= */}
 
       {checkoutOpen && (
         <div
@@ -1272,21 +1341,17 @@ export default function Home() {
           >
             <div className="modal-header">
               <div>
-                <small>
-                  CHECKOUT
-                </small>
-
+                <small>CHECKOUT</small>
                 <h2>
                   Confirm your order
                 </h2>
               </div>
 
               <button
+                type="button"
                 className="modal-close"
                 onClick={() =>
-                  setCheckoutOpen(
-                    false
-                  )
+                  setCheckoutOpen(false)
                 }
               >
                 ×
@@ -1295,20 +1360,14 @@ export default function Home() {
 
             <div className="checkout-box">
               <div>
-                <span>
-                  Products
-                </span>
-
+                <span>Products</span>
                 <strong>
                   {cartCount}
                 </strong>
               </div>
 
               <div>
-                <span>
-                  Total
-                </span>
-
+                <span>Total</span>
                 <strong>
                   EGP {cartTotal}
                 </strong>
@@ -1319,17 +1378,15 @@ export default function Home() {
               <span>✓</span>
 
               <p>
-                This is a demo pharmacy
-                checkout. No real payment
-                will be processed.
+                This is a demo pharmacy checkout.
+                No real payment will be processed.
               </p>
             </div>
 
             <button
+              type="button"
               className="confirm-order"
-              onClick={
-                confirmOrder
-              }
+              onClick={confirmOrder}
             >
               Confirm Order ✓
             </button>
@@ -1337,9 +1394,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* =====================================================
-          SUCCESS
-      ===================================================== */}
+      {/* ================= SUCCESS ================= */}
 
       {orderConfirmed && (
         <div className="success-toast">
@@ -1353,16 +1408,14 @@ export default function Home() {
             </strong>
 
             <p>
-              Thank you for choosing
-              PharmaAI.
+              Thank you for choosing PharmaAI.
             </p>
           </div>
 
           <button
+            type="button"
             onClick={() =>
-              setOrderConfirmed(
-                false
-              )
+              setOrderConfirmed(false)
             }
           >
             ×
