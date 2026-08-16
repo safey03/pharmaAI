@@ -122,73 +122,105 @@ const PRODUCTS: Product[] = [
   },
 ];
 
+const INITIAL_MESSAGE: Message = {
+  role: "assistant",
+  content:
+    "Hi! I'm PharmaAI 👋 I can help you with our treatments, cosmetics, prices, availability, and your cart.",
+};
+
 export default function Home() {
-  const [category, setCategory] = useState<"All" | Category>("All");
+  const [category, setCategory] = useState<
+    "All" | Category
+  >("All");
 
   const [aiOpen, setAiOpen] = useState(false);
-
   const [cartOpen, setCartOpen] = useState(false);
-
   const [checkoutOpen, setCheckoutOpen] = useState(false);
-
   const [orderConfirmed, setOrderConfirmed] = useState(false);
 
   const [darkMode, setDarkMode] = useState(true);
 
   const [input, setInput] = useState("");
-
   const [loading, setLoading] = useState(false);
 
   const [cart, setCart] = useState<CartItem[]>([]);
 
   const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      content:
-        "Hi! I'm PharmaAI 👋 I can help you with our treatments, cosmetics, prices, availability, and your cart.",
-    },
+    INITIAL_MESSAGE,
   ]);
 
   /*
-   * Load cart and theme from localStorage.
+   * Load saved cart and theme.
    */
   useEffect(() => {
     try {
-      const savedCart = localStorage.getItem("pharma-cart");
+      const savedCart =
+        localStorage.getItem("pharma-cart");
 
       if (savedCart) {
         const parsedCart = JSON.parse(savedCart);
 
         if (Array.isArray(parsedCart)) {
-          setCart(parsedCart);
+          const validCart = parsedCart.filter(
+            (item) =>
+              item &&
+              typeof item.id === "number" &&
+              typeof item.name === "string" &&
+              typeof item.price === "number" &&
+              typeof item.quantity === "number" &&
+              item.quantity > 0
+          );
+
+          setCart(validCart);
         }
       }
 
-      const savedTheme = localStorage.getItem("pharma-theme");
+      const savedTheme =
+        localStorage.getItem("pharma-theme");
 
       if (savedTheme === "light") {
         setDarkMode(false);
       }
     } catch (error) {
-      console.error("Failed to load saved data:", error);
+      console.error(
+        "Failed to load saved data:",
+        error
+      );
     }
   }, []);
 
   /*
-   * Save cart whenever it changes.
+   * Save cart.
    */
   useEffect(() => {
-    localStorage.setItem("pharma-cart", JSON.stringify(cart));
+    try {
+      localStorage.setItem(
+        "pharma-cart",
+        JSON.stringify(cart)
+      );
+    } catch (error) {
+      console.error(
+        "Failed to save cart:",
+        error
+      );
+    }
   }, [cart]);
 
   /*
    * Save theme.
    */
   useEffect(() => {
-    localStorage.setItem(
-      "pharma-theme",
-      darkMode ? "dark" : "light"
-    );
+    try {
+      localStorage.setItem(
+        "pharma-theme",
+        darkMode ? "dark" : "light"
+      );
+    } catch (error) {
+      console.error(
+        "Failed to save theme:",
+        error
+      );
+    }
   }, [darkMode]);
 
   const filteredProducts = useMemo(() => {
@@ -210,20 +242,31 @@ export default function Home() {
 
   const cartTotal = useMemo(() => {
     return cart.reduce(
-      (total, item) => total + item.price * item.quantity,
+      (total, item) =>
+        total + item.price * item.quantity,
       0
     );
   }, [cart]);
 
   /*
-   * Add a product to the cart.
+   * Add product to cart.
    */
-  function addToCart(productId: number, quantity = 1) {
+  function addToCart(
+    productId: number,
+    quantity = 1
+  ) {
     const product = PRODUCTS.find(
       (item) => item.id === productId
     );
 
-    if (!product) return;
+    if (!product) {
+      return;
+    }
+
+    const safeQuantity = Math.max(
+      1,
+      Math.floor(quantity)
+    );
 
     setCart((currentCart) => {
       const existing = currentCart.find(
@@ -235,7 +278,8 @@ export default function Home() {
           item.id === productId
             ? {
                 ...item,
-                quantity: item.quantity + quantity,
+                quantity:
+                  item.quantity + safeQuantity,
               }
             : item
         );
@@ -245,7 +289,7 @@ export default function Home() {
         ...currentCart,
         {
           ...product,
-          quantity,
+          quantity: safeQuantity,
         },
       ];
     });
@@ -288,7 +332,14 @@ export default function Home() {
   /*
    * Set exact quantity.
    */
-  function setQuantity(productId: number, quantity: number) {
+  function setQuantity(
+    productId: number,
+    quantity: number
+  ) {
+    if (!Number.isFinite(quantity)) {
+      return;
+    }
+
     const safeQuantity = Math.max(
       1,
       Math.floor(quantity)
@@ -318,68 +369,74 @@ export default function Home() {
   }
 
   /*
-   * Get product name.
+   * Execute AI action.
    */
-  function getProductName(productId?: number) {
-    if (!productId) {
-      return "product";
+  function executeAIAction(
+    action: Action | null | undefined
+  ) {
+    if (!action) {
+      return;
     }
-
-    return (
-      PRODUCTS.find((product) => product.id === productId)
-        ?.name ?? "product"
-    );
-  }
-
-  /*
-   * Execute an action returned by Gemini.
-   */
-  function executeAIAction(action: Action | null | undefined) {
-    if (!action) return;
 
     const productId = action.productId;
 
     switch (action.type) {
       case "ADD_TO_CART":
-        if (productId) {
+        if (
+          typeof productId === "number"
+        ) {
           addToCart(
             productId,
-            action.quantity && action.quantity > 0
+            typeof action.quantity === "number"
               ? action.quantity
               : 1
           );
+
+          setCartOpen(true);
         }
         break;
 
       case "INCREASE_QUANTITY":
-        if (productId) {
+        if (
+          typeof productId === "number"
+        ) {
           increaseQuantity(productId);
         }
         break;
 
       case "DECREASE_QUANTITY":
-        if (productId) {
+        if (
+          typeof productId === "number"
+        ) {
           decreaseQuantity(productId);
         }
         break;
 
       case "SET_QUANTITY":
         if (
-          productId &&
+          typeof productId === "number" &&
           typeof action.quantity === "number"
         ) {
-          setQuantity(productId, action.quantity);
+          setQuantity(
+            productId,
+            action.quantity
+          );
         }
         break;
 
       case "REMOVE_FROM_CART":
-        if (productId) {
+        if (
+          typeof productId === "number"
+        ) {
           removeFromCart(productId);
         }
         break;
 
       case "CONFIRM_ORDER":
-        setCheckoutOpen(true);
+        if (cart.length > 0) {
+          setCartOpen(false);
+          setCheckoutOpen(true);
+        }
         break;
 
       default:
@@ -388,7 +445,7 @@ export default function Home() {
   }
 
   /*
-   * Build cart information for Gemini.
+   * Current cart for AI.
    */
   function getCartForAI() {
     if (cart.length === 0) {
@@ -398,7 +455,9 @@ export default function Home() {
     return cart
       .map(
         (item) =>
-          `${item.name} | quantity: ${item.quantity} | unit price: EGP ${item.price}`
+          `${item.name} | quantity: ${item.quantity} | unit price: EGP ${item.price} | subtotal: EGP ${
+            item.price * item.quantity
+          }`
       )
       .join("\n");
   }
@@ -422,72 +481,65 @@ export default function Home() {
       content: messageText,
     };
 
-    /*
-     * IMPORTANT:
-     * We create the updated messages BEFORE sending them.
-     * This fixes the problem where the latest user message
-     * was sometimes missing from the request.
-     */
     const updatedMessages = [
       ...messages,
       userMessage,
     ];
 
     setMessages(updatedMessages);
-
     setInput("");
-
     setLoading(true);
 
     try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
+      const response = await fetch(
+        "/api/chat",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            messages: updatedMessages,
 
-        headers: {
-          "Content-Type": "application/json",
-        },
+            products: PRODUCTS,
 
-        body: JSON.stringify({
-          messages: updatedMessages,
+            cart: cart.map(
+              ({
+                id,
+                name,
+                quantity,
+                price,
+              }) => ({
+                id,
+                name,
+                quantity,
+                price,
+              })
+            ),
 
-          products: PRODUCTS.map(
-            ({
-              id,
-              name,
-              category,
-              price,
-            }) => ({
-              id,
-              name,
-              category,
-              price,
-            })
-          ),
+            cartText: getCartForAI(),
+          }),
+        }
+      );
 
-          cart: cart.map(
-            ({
-              id,
-              name,
-              quantity,
-              price,
-            }) => ({
-              id,
-              name,
-              quantity,
-              price,
-            })
-          ),
+      let data: {
+        message?: string;
+        action?: Action | null;
+      };
 
-          cartText: getCartForAI(),
-        }),
-      });
-
-      const data = await response.json();
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error(
+          "Invalid server response."
+        );
+      }
 
       if (!response.ok) {
         throw new Error(
           data?.message ||
-            "AI request failed"
+            "AI request failed."
         );
       }
 
@@ -498,28 +550,32 @@ export default function Home() {
           "I couldn't generate a response.",
       };
 
-      setMessages((currentMessages) => [
-        ...currentMessages,
-        assistantMessage,
-      ]);
+      setMessages(
+        (currentMessages) => [
+          ...currentMessages,
+          assistantMessage,
+        ]
+      );
 
-      /*
-       * Execute action returned from Gemini.
-       */
       if (data?.action) {
         executeAIAction(data.action);
       }
     } catch (error) {
-      console.error("AI request failed:", error);
+      console.error(
+        "AI request failed:",
+        error
+      );
 
-      setMessages((currentMessages) => [
-        ...currentMessages,
-        {
-          role: "assistant",
-          content:
-            "Sorry, I couldn't connect to PharmaAI right now. Please try again.",
-        },
-      ]);
+      setMessages(
+        (currentMessages) => [
+          ...currentMessages,
+          {
+            role: "assistant",
+            content:
+              "Sorry, I couldn't connect to PharmaAI right now. Please try again.",
+          },
+        ]
+      );
     } finally {
       setLoading(false);
     }
@@ -529,11 +585,12 @@ export default function Home() {
     event: FormEvent<HTMLFormElement>
   ) {
     event.preventDefault();
-
     sendMessage();
   }
 
-  function askAboutProduct(product: Product) {
+  function askAboutProduct(
+    product: Product
+  ) {
     setAiOpen(true);
 
     sendMessage(
@@ -542,13 +599,34 @@ export default function Home() {
   }
 
   function clearChat() {
-    setMessages([
-      {
-        role: "assistant",
-        content:
-          "Hi! I'm PharmaAI 👋 I can help you with our treatments, cosmetics, prices, availability, and your cart.",
-      },
-    ]);
+    if (loading) {
+      return;
+    }
+
+    setMessages([INITIAL_MESSAGE]);
+  }
+
+  function openCheckout() {
+    if (cart.length === 0) {
+      return;
+    }
+
+    setCartOpen(false);
+    setCheckoutOpen(true);
+  }
+
+  function confirmOrder() {
+    if (cart.length === 0) {
+      return;
+    }
+
+    setOrderConfirmed(true);
+    setCart([]);
+  }
+
+  function closeCheckout() {
+    setCheckoutOpen(false);
+    setOrderConfirmed(false);
   }
 
   return (
@@ -576,6 +654,10 @@ export default function Home() {
         button,
         input {
           font: inherit;
+        }
+
+        button {
+          -webkit-tap-highlight-color: transparent;
         }
 
         .app {
@@ -607,12 +689,13 @@ export default function Home() {
           z-index: 20;
           backdrop-filter: blur(20px);
           background: rgba(7, 17, 31, 0.8);
-          border-bottom: 1px solid rgba(255,255,255,.08);
+          border-bottom: 1px solid
+            rgba(255, 255, 255, 0.08);
         }
 
         .light .navbar {
-          background: rgba(255,255,255,.85);
-          border-bottom-color: rgba(0,0,0,.08);
+          background: rgba(255, 255, 255, 0.85);
+          border-bottom-color: rgba(0, 0, 0, 0.08);
         }
 
         .nav-inner {
@@ -650,19 +733,20 @@ export default function Home() {
         }
 
         .icon-btn {
-          border: 1px solid rgba(255,255,255,.1);
-          background: rgba(255,255,255,.05);
+          border: 1px solid
+            rgba(255, 255, 255, 0.1);
+          background: rgba(255, 255, 255, 0.05);
           color: inherit;
           width: 44px;
           height: 44px;
           border-radius: 14px;
           cursor: pointer;
-          transition: .2s;
+          transition: 0.2s;
         }
 
         .icon-btn:hover {
           transform: translateY(-2px);
-          background: rgba(255,255,255,.1);
+          background: rgba(255, 255, 255, 0.1);
         }
 
         .cart-btn {
@@ -699,16 +783,17 @@ export default function Home() {
           display: inline-flex;
           padding: 8px 14px;
           border-radius: 999px;
-          background: rgba(140,255,0,.1);
+          background: rgba(140, 255, 0, 0.1);
           color: #8cff00;
-          border: 1px solid rgba(140,255,0,.2);
+          border: 1px solid
+            rgba(140, 255, 0, 0.2);
           font-size: 13px;
           font-weight: 700;
         }
 
         .hero h1 {
           font-size: clamp(42px, 7vw, 78px);
-          line-height: .98;
+          line-height: 0.98;
           margin: 20px auto;
           max-width: 900px;
           letter-spacing: -3px;
@@ -721,7 +806,7 @@ export default function Home() {
         .hero p {
           max-width: 650px;
           margin: auto;
-          opacity: .7;
+          opacity: 0.7;
           font-size: 17px;
           line-height: 1.7;
         }
@@ -737,8 +822,9 @@ export default function Home() {
         .filter-btn {
           padding: 11px 20px;
           border-radius: 999px;
-          border: 1px solid rgba(255,255,255,.1);
-          background: rgba(255,255,255,.04);
+          border: 1px solid
+            rgba(255, 255, 255, 0.1);
+          background: rgba(255, 255, 255, 0.04);
           color: inherit;
           cursor: pointer;
         }
@@ -760,15 +846,17 @@ export default function Home() {
         .product {
           border-radius: 24px;
           padding: 20px;
-          background: rgba(255,255,255,.055);
-          border: 1px solid rgba(255,255,255,.08);
-          transition: .25s;
+          background: rgba(255, 255, 255, 0.055);
+          border: 1px solid
+            rgba(255, 255, 255, 0.08);
+          transition: 0.25s;
         }
 
         .light .product {
           background: white;
-          border-color: rgba(0,0,0,.06);
-          box-shadow: 0 10px 30px rgba(20,40,60,.06);
+          border-color: rgba(0, 0, 0, 0.06);
+          box-shadow: 0 10px 30px
+            rgba(20, 40, 60, 0.06);
         }
 
         .product:hover {
@@ -778,7 +866,7 @@ export default function Home() {
         .product-image {
           height: 180px;
           border-radius: 18px;
-          background: rgba(255,255,255,.05);
+          background: rgba(255, 255, 255, 0.05);
           display: grid;
           place-items: center;
           font-size: 70px;
@@ -798,7 +886,7 @@ export default function Home() {
         }
 
         .product p {
-          opacity: .6;
+          opacity: 0.6;
           min-height: 44px;
           line-height: 1.5;
         }
@@ -836,7 +924,7 @@ export default function Home() {
         }
 
         .ask-btn {
-          background: rgba(255,255,255,.08);
+          background: rgba(255, 255, 255, 0.08);
           color: inherit;
         }
 
@@ -852,7 +940,8 @@ export default function Home() {
           color: #07111f;
           font-weight: 900;
           cursor: pointer;
-          box-shadow: 0 15px 40px rgba(0,0,0,.3);
+          box-shadow: 0 15px 40px
+            rgba(0, 0, 0, 0.3);
         }
 
         .ai-panel {
@@ -867,8 +956,10 @@ export default function Home() {
           border-radius: 26px;
           overflow: hidden;
           background: #0d1b2d;
-          border: 1px solid rgba(255,255,255,.1);
-          box-shadow: 0 30px 80px rgba(0,0,0,.45);
+          border: 1px solid
+            rgba(255, 255, 255, 0.1);
+          box-shadow: 0 30px 80px
+            rgba(0, 0, 0, 0.45);
         }
 
         .ai-header {
@@ -876,7 +967,8 @@ export default function Home() {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          border-bottom: 1px solid rgba(255,255,255,.08);
+          border-bottom: 1px solid
+            rgba(255, 255, 255, 0.08);
         }
 
         .ai-title {
@@ -899,7 +991,7 @@ export default function Home() {
 
         .online {
           font-size: 11px;
-          opacity: .5;
+          opacity: 0.5;
         }
 
         .online-dot {
@@ -913,7 +1005,7 @@ export default function Home() {
 
         .close-ai {
           border: 0;
-          background: rgba(255,255,255,.06);
+          background: rgba(255, 255, 255, 0.06);
           color: white;
           width: 36px;
           height: 36px;
@@ -942,10 +1034,12 @@ export default function Home() {
           border-radius: 17px;
           line-height: 1.5;
           font-size: 14px;
+          white-space: pre-wrap;
         }
 
         .message.assistant {
-          background: rgba(255,255,255,.07);
+          background: rgba(255, 255, 255, 0.07);
+          border-bottom-left-radius: 5px;
         }
 
         .message.user {
@@ -954,12 +1048,8 @@ export default function Home() {
           border-bottom-right-radius: 5px;
         }
 
-        .message.assistant {
-          border-bottom-left-radius: 5px;
-        }
-
         .typing {
-          opacity: .6;
+          opacity: 0.6;
           font-size: 13px;
           padding: 8px 2px;
         }
@@ -969,13 +1059,15 @@ export default function Home() {
           display: flex;
           gap: 7px;
           overflow-x: auto;
-          border-top: 1px solid rgba(255,255,255,.06);
+          border-top: 1px solid
+            rgba(255, 255, 255, 0.06);
         }
 
         .quick-btn {
           white-space: nowrap;
-          border: 1px solid rgba(255,255,255,.1);
-          background: rgba(255,255,255,.04);
+          border: 1px solid
+            rgba(255, 255, 255, 0.1);
+          background: rgba(255, 255, 255, 0.04);
           color: white;
           padding: 9px 12px;
           border-radius: 12px;
@@ -995,8 +1087,9 @@ export default function Home() {
         .chat-input {
           flex: 1;
           min-width: 0;
-          border: 1px solid rgba(255,255,255,.1);
-          background: rgba(255,255,255,.05);
+          border: 1px solid
+            rgba(255, 255, 255, 0.1);
+          background: rgba(255, 255, 255, 0.05);
           color: white;
           outline: none;
           border-radius: 14px;
@@ -1015,20 +1108,20 @@ export default function Home() {
         }
 
         .send-btn:disabled {
-          opacity: .4;
+          opacity: 0.4;
           cursor: not-allowed;
         }
 
         .disclaimer {
           font-size: 10px;
-          opacity: .35;
+          opacity: 0.35;
           margin-top: 8px;
         }
 
         .cart-overlay {
           position: fixed;
           inset: 0;
-          background: rgba(0,0,0,.55);
+          background: rgba(0, 0, 0, 0.55);
           z-index: 70;
         }
 
@@ -1055,7 +1148,8 @@ export default function Home() {
           justify-content: space-between;
           gap: 15px;
           padding: 15px 0;
-          border-bottom: 1px solid rgba(255,255,255,.08);
+          border-bottom: 1px solid
+            rgba(255, 255, 255, 0.08);
         }
 
         .quantity {
@@ -1070,7 +1164,7 @@ export default function Home() {
           height: 28px;
           border: 0;
           border-radius: 8px;
-          background: rgba(255,255,255,.08);
+          background: rgba(255, 255, 255, 0.08);
           color: white;
           cursor: pointer;
         }
@@ -1089,8 +1183,32 @@ export default function Home() {
 
         .empty {
           text-align: center;
-          opacity: .5;
+          opacity: 0.5;
           padding: 60px 10px;
+        }
+
+        .checkout-modal {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          width: min(420px, 90%);
+          background: #0d1b2d;
+          padding: 30px;
+          border-radius: 25px;
+          text-align: center;
+        }
+
+        .cancel-btn {
+          width: 100%;
+          border: 0;
+          border-radius: 14px;
+          padding: 14px;
+          margin-top: 10px;
+          background: rgba(255, 255, 255, 0.08);
+          color: white;
+          font-weight: 800;
+          cursor: pointer;
         }
 
         @media (max-width: 850px) {
@@ -1122,6 +1240,15 @@ export default function Home() {
             right: 15px;
             bottom: 15px;
           }
+
+          .product-bottom {
+            align-items: flex-end;
+          }
+
+          .product-actions {
+            flex-wrap: wrap;
+            justify-content: flex-end;
+          }
         }
       `}</style>
 
@@ -1133,6 +1260,7 @@ export default function Home() {
 
             <div>
               <div>PharmaAI</div>
+
               <small
                 style={{
                   opacity: 0.45,
@@ -1148,7 +1276,9 @@ export default function Home() {
             <button
               className="icon-btn"
               onClick={() =>
-                setDarkMode((value) => !value)
+                setDarkMode(
+                  (value) => !value
+                )
               }
               title="Toggle theme"
             >
@@ -1157,7 +1287,9 @@ export default function Home() {
 
             <button
               className="cart-btn"
-              onClick={() => setCartOpen(true)}
+              onClick={() =>
+                setCartOpen(true)
+              }
             >
               🛒 Cart
 
@@ -1184,8 +1316,9 @@ export default function Home() {
         </h1>
 
         <p>
-          Find treatments and cosmetics, check prices,
-          and manage your cart with PharmaAI.
+          Find treatments and cosmetics,
+          check prices, and manage your
+          cart with PharmaAI.
         </p>
       </section>
 
@@ -1193,7 +1326,11 @@ export default function Home() {
       <section className="container">
         <div className="filters">
           {(
-            ["All", "Treatment", "Cosmetics"] as const
+            [
+              "All",
+              "Treatment",
+              "Cosmetics",
+            ] as const
           ).map((item) => (
             <button
               key={item}
@@ -1202,7 +1339,9 @@ export default function Home() {
                   ? "filter-btn active"
                   : "filter-btn"
               }
-              onClick={() => setCategory(item)}
+              onClick={() =>
+                setCategory(item)
+              }
             >
               {item}
             </button>
@@ -1210,50 +1349,58 @@ export default function Home() {
         </div>
 
         <div className="products">
-          {filteredProducts.map((product) => (
-            <article
-              className="product"
-              key={product.id}
-            >
-              <div className="product-image">
-                {product.emoji}
-              </div>
-
-              <div className="product-category">
-                {product.category}
-              </div>
-
-              <h3>{product.name}</h3>
-
-              <p>{product.description}</p>
-
-              <div className="product-bottom">
-                <div className="price">
-                  EGP {product.price}
+          {filteredProducts.map(
+            (product) => (
+              <article
+                className="product"
+                key={product.id}
+              >
+                <div className="product-image">
+                  {product.emoji}
                 </div>
 
-                <div className="product-actions">
-                  <button
-                    className="ask-btn"
-                    onClick={() =>
-                      askAboutProduct(product)
-                    }
-                  >
-                    Ask AI
-                  </button>
-
-                  <button
-                    className="add-btn"
-                    onClick={() =>
-                      addToCart(product.id)
-                    }
-                  >
-                    Add
-                  </button>
+                <div className="product-category">
+                  {product.category}
                 </div>
-              </div>
-            </article>
-          ))}
+
+                <h3>{product.name}</h3>
+
+                <p>
+                  {product.description}
+                </p>
+
+                <div className="product-bottom">
+                  <div className="price">
+                    EGP {product.price}
+                  </div>
+
+                  <div className="product-actions">
+                    <button
+                      className="ask-btn"
+                      onClick={() =>
+                        askAboutProduct(
+                          product
+                        )
+                      }
+                    >
+                      Ask AI
+                    </button>
+
+                    <button
+                      className="add-btn"
+                      onClick={() =>
+                        addToCart(
+                          product.id
+                        )
+                      }
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
+              </article>
+            )
+          )}
         </div>
       </section>
 
@@ -1261,7 +1408,9 @@ export default function Home() {
       {!aiOpen && (
         <button
           className="ai-button"
-          onClick={() => setAiOpen(true)}
+          onClick={() =>
+            setAiOpen(true)
+          }
         >
           ✨ Ask PharmaAI
         </button>
@@ -1294,13 +1443,16 @@ export default function Home() {
                 className="close-ai"
                 onClick={clearChat}
                 title="Clear chat"
+                disabled={loading}
               >
                 ↻
               </button>
 
               <button
                 className="close-ai"
-                onClick={() => setAiOpen(false)}
+                onClick={() =>
+                  setAiOpen(false)
+                }
               >
                 ✕
               </button>
@@ -1341,6 +1493,7 @@ export default function Home() {
           <div className="quick-actions">
             <button
               className="quick-btn"
+              disabled={loading}
               onClick={() =>
                 sendMessage(
                   "Show me the treatments available."
@@ -1352,6 +1505,7 @@ export default function Home() {
 
             <button
               className="quick-btn"
+              disabled={loading}
               onClick={() =>
                 sendMessage(
                   "Show me the cosmetics available."
@@ -1363,6 +1517,7 @@ export default function Home() {
 
             <button
               className="quick-btn"
+              disabled={loading}
               onClick={() =>
                 sendMessage(
                   "Show me the prices of all products."
@@ -1374,6 +1529,7 @@ export default function Home() {
 
             <button
               className="quick-btn"
+              disabled={loading}
               onClick={() =>
                 sendMessage(
                   "Show me what's currently in my cart."
@@ -1393,7 +1549,9 @@ export default function Home() {
                 className="chat-input"
                 value={input}
                 onChange={(event) =>
-                  setInput(event.target.value)
+                  setInput(
+                    event.target.value
+                  )
                 }
                 placeholder="Ask about a product..."
                 disabled={loading}
@@ -1403,7 +1561,8 @@ export default function Home() {
                 className="send-btn"
                 type="submit"
                 disabled={
-                  loading || !input.trim()
+                  loading ||
+                  !input.trim()
                 }
               >
                 ↑
@@ -1411,9 +1570,9 @@ export default function Home() {
             </form>
 
             <div className="disclaimer">
-              Product information only • General
-              information does not replace a doctor or
-              pharmacist.
+              Product information only •
+              General information does not
+              replace a doctor or pharmacist.
             </div>
           </div>
         </div>
@@ -1423,7 +1582,9 @@ export default function Home() {
       {cartOpen && (
         <div
           className="cart-overlay"
-          onClick={() => setCartOpen(false)}
+          onClick={() =>
+            setCartOpen(false)
+          }
         >
           <aside
             className="cart-panel"
@@ -1539,9 +1700,7 @@ export default function Home() {
 
                 <button
                   className="checkout"
-                  onClick={() =>
-                    setCheckoutOpen(true)
-                  }
+                  onClick={openCheckout}
                 >
                   Proceed to Checkout
                 </button>
@@ -1555,23 +1714,10 @@ export default function Home() {
       {checkoutOpen && (
         <div
           className="cart-overlay"
-          onClick={() =>
-            setCheckoutOpen(false)
-          }
+          onClick={closeCheckout}
         >
           <div
-            style={{
-              position: "absolute",
-              top: "50%",
-              left: "50%",
-              transform:
-                "translate(-50%, -50%)",
-              width: "min(420px, 90%)",
-              background: "#0d1b2d",
-              padding: 30,
-              borderRadius: 25,
-              textAlign: "center",
-            }}
+            className="checkout-modal"
             onClick={(event) =>
               event.stopPropagation()
             }
@@ -1605,27 +1751,14 @@ export default function Home() {
 
                 <button
                   className="checkout"
-                  onClick={() => {
-                    setOrderConfirmed(
-                      true
-                    );
-                    setCart([]);
-                  }}
+                  onClick={confirmOrder}
                 >
                   Confirm Order
                 </button>
 
                 <button
-                  className="checkout"
-                  style={{
-                    marginTop: 10,
-                    background:
-                      "rgba(255,255,255,.08)",
-                    color: "white",
-                  }}
-                  onClick={() =>
-                    setCheckoutOpen(false)
-                  }
+                  className="cancel-btn"
+                  onClick={closeCheckout}
                 >
                   Cancel
                 </button>
@@ -1649,20 +1782,13 @@ export default function Home() {
                     opacity: 0.6,
                   }}
                 >
-                  Thank you for shopping with
-                  PharmaAI.
+                  Thank you for shopping
+                  with PharmaAI.
                 </p>
 
                 <button
                   className="checkout"
-                  onClick={() => {
-                    setCheckoutOpen(
-                      false
-                    );
-                    setOrderConfirmed(
-                      false
-                    );
-                  }}
+                  onClick={closeCheckout}
                 >
                   Done
                 </button>

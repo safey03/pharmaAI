@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 
+type Category = "Treatment" | "Cosmetics";
+
 type Product = {
   id: number;
   name: string;
-  category: "Treatment" | "Cosmetics";
+  category: Category;
   price: number;
+  description?: string;
 };
 
 type CartItem = {
@@ -20,14 +23,16 @@ type ChatMessage = {
   content: string;
 };
 
+type ActionType =
+  | "ADD_TO_CART"
+  | "INCREASE_QUANTITY"
+  | "DECREASE_QUANTITY"
+  | "SET_QUANTITY"
+  | "REMOVE_FROM_CART"
+  | "CONFIRM_ORDER";
+
 type AIAction = {
-  type:
-    | "ADD_TO_CART"
-    | "INCREASE_QUANTITY"
-    | "DECREASE_QUANTITY"
-    | "SET_QUANTITY"
-    | "REMOVE_FROM_CART"
-    | "CONFIRM_ORDER";
+  type: ActionType;
   productId?: number;
   quantity?: number;
 };
@@ -37,16 +42,191 @@ type AIResponse = {
   action: AIAction | null;
 };
 
-export async function POST(request: NextRequest) {
-  try {
-    // -----------------------------------------
-    // 1. Get Gemini API key
-    // -----------------------------------------
+const ALLOWED_ACTIONS: ActionType[] = [
+  "ADD_TO_CART",
+  "INCREASE_QUANTITY",
+  "DECREASE_QUANTITY",
+  "SET_QUANTITY",
+  "REMOVE_FROM_CART",
+  "CONFIRM_ORDER",
+];
 
-    const apiKey = process.env.GEMINI_API_KEY;
+function cleanJsonText(text: string) {
+  return text
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
+}
+
+function isValidProductId(
+  productId: unknown,
+  products: Product[]
+): productId is number {
+  return (
+    typeof productId === "number" &&
+    Number.isInteger(productId) &&
+    products.some(
+      (product) => product.id === productId
+    )
+  );
+}
+
+function isValidQuantity(
+  quantity: unknown
+): quantity is number {
+  return (
+    typeof quantity === "number" &&
+    Number.isFinite(quantity) &&
+    Number.isInteger(quantity) &&
+    quantity > 0
+  );
+}
+
+function validateAction(
+  rawAction: unknown,
+  products: Product[]
+): AIAction | null {
+  if (
+    !rawAction ||
+    typeof rawAction !== "object"
+  ) {
+    return null;
+  }
+
+  const possibleAction =
+    rawAction as Partial<AIAction>;
+
+  if (
+    typeof possibleAction.type !==
+    "string"
+  ) {
+    return null;
+  }
+
+  if (
+    !ALLOWED_ACTIONS.includes(
+      possibleAction.type as ActionType
+    )
+  ) {
+    return null;
+  }
+
+  const type =
+    possibleAction.type as ActionType;
+
+  /*
+   * CONFIRM_ORDER does not need productId.
+   */
+  if (type === "CONFIRM_ORDER") {
+    return {
+      type,
+    };
+  }
+
+  /*
+   * All other actions require a valid product.
+   */
+  if (
+    !isValidProductId(
+      possibleAction.productId,
+      products
+    )
+  ) {
+    return null;
+  }
+
+  const action: AIAction = {
+    type,
+    productId:
+      possibleAction.productId,
+  };
+
+  /*
+   * ADD_TO_CART
+   */
+  if (type === "ADD_TO_CART") {
+    action.quantity = isValidQuantity(
+      possibleAction.quantity
+    )
+      ? possibleAction.quantity
+      : 1;
+
+    return action;
+  }
+
+  /*
+   * SET_QUANTITY requires quantity.
+   */
+  if (type === "SET_QUANTITY") {
+    if (
+      !isValidQuantity(
+        possibleAction.quantity
+      )
+    ) {
+      return null;
+    }
+
+    action.quantity =
+      possibleAction.quantity;
+
+    return action;
+  }
+
+  /*
+   * Increase / decrease / remove.
+   */
+  return action;
+}
+
+function buildCatalog(
+  products: Product[]
+) {
+  if (products.length === 0) {
+    return "No products are currently available.";
+  }
+
+  return products
+    .map(
+      (product) =>
+        `${product.id}. ${product.name} | Category: ${product.category} | Price: EGP ${product.price} | Description: ${
+          product.description ?? ""
+        }`
+    )
+    .join("\n");
+}
+
+function buildCartText(
+  cart: CartItem[]
+) {
+  if (cart.length === 0) {
+    return "The cart is currently empty.";
+  }
+
+  return cart
+    .map(
+      (item) =>
+        `${item.name} | quantity: ${item.quantity} | unit price: EGP ${item.price} | subtotal: EGP ${
+          item.price * item.quantity
+        }`
+    )
+    .join("\n");
+}
+
+export async function POST(
+  request: NextRequest
+) {
+  try {
+    /*
+     * 1. API KEY
+     */
+    const apiKey =
+      process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
-      console.error("GEMINI_API_KEY is missing");
+      console.error(
+        "GEMINI_API_KEY is missing."
+      );
 
       return NextResponse.json(
         {
@@ -58,47 +238,55 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // -----------------------------------------
-    // 2. Read request body
-    // -----------------------------------------
+    /*
+     * 2. BODY
+     */
+    const body =
+      await request.json();
 
-    const body = await request.json();
+    const messages: ChatMessage[] =
+      Array.isArray(body?.messages)
+        ? body.messages
+        : [];
 
-    const messages: ChatMessage[] = Array.isArray(body.messages)
-      ? body.messages
-      : [];
+    const products: Product[] =
+      Array.isArray(body?.products)
+        ? body.products
+        : [];
 
-    const products: Product[] = Array.isArray(body.products)
-      ? body.products
-      : [];
-
-    const cart: CartItem[] = Array.isArray(body.cart)
-      ? body.cart
-      : [];
+    const cart: CartItem[] =
+      Array.isArray(body?.cart)
+        ? body.cart
+        : [];
 
     if (messages.length === 0) {
       return NextResponse.json(
         {
-          message: "Please send a message.",
+          message:
+            "Please send a message.",
           action: null,
         },
         { status: 400 }
       );
     }
 
-    // -----------------------------------------
-    // 3. Convert frontend messages to Gemini
-    // -----------------------------------------
-
+    /*
+     * 3. SANITIZE MESSAGES
+     */
     const contents = messages
       .filter(
         (message) =>
           message &&
-          typeof message.content === "string" &&
-          message.content.trim().length > 0
+          typeof message.content ===
+            "string" &&
+          message.content.trim().length >
+            0
       )
       .map((message) => ({
-        role: message.role === "user" ? "user" : "model",
+        role:
+          message.role === "user"
+            ? "user"
+            : "model",
         parts: [
           {
             text: message.content.trim(),
@@ -109,59 +297,39 @@ export async function POST(request: NextRequest) {
     if (contents.length === 0) {
       return NextResponse.json(
         {
-          message: "Please send a valid message.",
+          message:
+            "Please send a valid message.",
           action: null,
         },
         { status: 400 }
       );
     }
 
-    // -----------------------------------------
-    // 4. Build pharmacy catalog
-    // -----------------------------------------
-
+    /*
+     * 4. CATALOG
+     */
     const catalog =
-      products.length > 0
-        ? products
-            .map(
-              (product) =>
-                `${product.id}. ${product.name} | Category: ${product.category} | Price: EGP ${product.price} | Description: ${
-                  (product as Product & { description?: string })
-                    .description ?? ""
-                }`
-            )
-            .join("\n")
-        : "No products are currently available.";
+      buildCatalog(products);
 
-    // -----------------------------------------
-    // 5. Build cart information
-    // -----------------------------------------
-
+    /*
+     * 5. CART
+     */
     const cartText =
-      cart.length > 0
-        ? cart
-            .map(
-              (item) =>
-                `${item.name} | quantity: ${item.quantity} | unit price: EGP ${item.price} | subtotal: EGP ${
-                  item.price * item.quantity
-                }`
-            )
-            .join("\n")
-        : "The cart is currently empty.";
+      buildCartText(cart);
 
-    // -----------------------------------------
-    // 6. Calculate cart total
-    // -----------------------------------------
-
+    /*
+     * 6. CART TOTAL
+     */
     const cartTotal = cart.reduce(
-      (total, item) => total + item.price * item.quantity,
+      (total, item) =>
+        total +
+        item.price * item.quantity,
       0
     );
 
-    // -----------------------------------------
-    // 7. System instruction
-    // -----------------------------------------
-
+    /*
+     * 7. SYSTEM INSTRUCTION
+     */
     const systemInstruction = `
 You are PharmaAI, the AI assistant for a pharmacy website.
 
@@ -170,17 +338,17 @@ Your job is to help customers with the pharmacy catalog and shopping cart.
 IMPORTANT RULES:
 
 1. Only answer questions related to:
-   - Pharmacy products
-   - Treatments
-   - Cosmetics
-   - Product prices
-   - Product availability
-   - Product descriptions
-   - The customer's shopping cart
-   - Adding products to the cart
-   - Removing products from the cart
-   - Changing product quantities
-   - Confirming an order
+- Pharmacy products
+- Treatments
+- Cosmetics
+- Product prices
+- Product availability
+- Product descriptions
+- The customer's shopping cart
+- Adding products to the cart
+- Removing products from the cart
+- Changing product quantities
+- Preparing an order for confirmation
 
 2. NEVER invent a product.
 
@@ -190,39 +358,35 @@ IMPORTANT RULES:
 
 5. Always use the exact product ID from the catalog when returning a cart action.
 
-6. If the customer asks to add a product to the cart, return:
-   ADD_TO_CART
+6. If the customer asks to add a product, return ADD_TO_CART.
 
-7. If the customer asks to increase a quantity, return:
-   INCREASE_QUANTITY
+7. If the customer asks to increase a quantity, return INCREASE_QUANTITY.
 
-8. If the customer asks to decrease a quantity, return:
-   DECREASE_QUANTITY
+8. If the customer asks to decrease a quantity, return DECREASE_QUANTITY.
 
-9. If the customer specifies an exact quantity, return:
-   SET_QUANTITY
+9. If the customer specifies an exact quantity, return SET_QUANTITY.
 
-10. If the customer asks to remove a product, return:
-    REMOVE_FROM_CART
+10. If the customer asks to remove a product, return REMOVE_FROM_CART.
 
-11. If the customer clearly wants to proceed with the order, return:
-    CONFIRM_ORDER
+11. Only return CONFIRM_ORDER when the customer clearly says they want to proceed to checkout, confirm the order, or place the order.
 
-12. Do NOT claim that an order was placed unless the customer confirms it through the website.
+12. NEVER return CONFIRM_ORDER merely because the user asks about the total, cart, products, or prices.
 
-13. When the user asks about the cart, use the CURRENT CART information below.
+13. Do NOT claim that an order was placed. The website itself handles final order confirmation.
 
-14. Keep responses relatively short and helpful.
+14. When the user asks about the cart, use the CURRENT CART information below.
 
-15. If the user asks something unrelated to pharmacy products or cosmetics, politely explain that PharmaAI only handles pharmacy products and cosmetics.
+15. Keep responses short and helpful.
 
-16. Always respond in English.
+16. If the user asks something unrelated to pharmacy products or cosmetics, politely explain that PharmaAI only handles pharmacy products and cosmetics.
 
-17. Your entire response MUST be valid JSON.
+17. Always respond in English.
 
-18. Do not use Markdown.
+18. Your entire response MUST be valid JSON.
 
-19. Do not use code fences.
+19. Do not use Markdown.
+
+20. Do not use code fences.
 
 CATALOG:
 ${catalog}
@@ -233,18 +397,14 @@ ${cartText}
 CURRENT CART TOTAL:
 EGP ${cartTotal}
 
------------------------------------------
-RESPONSE FORMAT
------------------------------------------
-
-If no cart action is required:
+RESPONSE FORMAT:
 
 {
   "message": "Your answer here",
   "action": null
 }
 
-If an action is required:
+OR:
 
 {
   "message": "Your answer here",
@@ -255,14 +415,9 @@ If an action is required:
   }
 }
 
------------------------------------------
-ALLOWED ACTIONS
------------------------------------------
+ALLOWED ACTIONS:
 
-ADD_TO_CART
-
-Example:
-
+ADD_TO_CART:
 {
   "message": "Panadol Extra has been added to your cart.",
   "action": {
@@ -272,8 +427,7 @@ Example:
   }
 }
 
-INCREASE_QUANTITY
-
+INCREASE_QUANTITY:
 {
   "message": "I increased the quantity of Panadol Extra.",
   "action": {
@@ -282,8 +436,7 @@ INCREASE_QUANTITY
   }
 }
 
-DECREASE_QUANTITY
-
+DECREASE_QUANTITY:
 {
   "message": "I decreased the quantity of Panadol Extra.",
   "action": {
@@ -292,8 +445,7 @@ DECREASE_QUANTITY
   }
 }
 
-SET_QUANTITY
-
+SET_QUANTITY:
 {
   "message": "The quantity has been updated.",
   "action": {
@@ -303,8 +455,7 @@ SET_QUANTITY
   }
 }
 
-REMOVE_FROM_CART
-
+REMOVE_FROM_CART:
 {
   "message": "Panadol Extra has been removed from your cart.",
   "action": {
@@ -313,8 +464,7 @@ REMOVE_FROM_CART
   }
 }
 
-CONFIRM_ORDER
-
+CONFIRM_ORDER:
 {
   "message": "Your order is ready for confirmation.",
   "action": {
@@ -322,9 +472,9 @@ CONFIRM_ORDER
   }
 }
 
-If the customer asks about the cart, DO NOT return an action unless they actually request a cart change.
+If the customer only asks about the cart, do NOT return an action.
 
-For example:
+Example:
 
 {
   "message": "Your cart contains Panadol Extra x2 and Cataflam 50mg x1. Your current total is EGP 155.",
@@ -332,40 +482,42 @@ For example:
 }
 `;
 
-    // -----------------------------------------
-    // 8. Create Gemini client
-    // -----------------------------------------
-
+    /*
+     * 8. GEMINI CLIENT
+     */
     const ai = new GoogleGenAI({
       apiKey,
     });
 
-    // -----------------------------------------
-    // 9. Ask Gemini
-    // -----------------------------------------
+    /*
+     * 9. GENERATE CONTENT
+     */
+    const response =
+      await ai.models.generateContent({
+        model: "gemini-2.5-flash",
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+        contents,
 
-      contents,
+        config: {
+          systemInstruction,
 
-      config: {
-        systemInstruction,
+          temperature: 0.2,
 
-        temperature: 0.2,
+          responseMimeType:
+            "application/json",
+        },
+      });
 
-        responseMimeType: "application/json",
-      },
-    });
+    /*
+     * 10. RESPONSE TEXT
+     */
+    const rawText =
+      response.text?.trim();
 
-    // -----------------------------------------
-    // 10. Get Gemini response
-    // -----------------------------------------
-
-    const text = response.text?.trim();
-
-    if (!text) {
-      console.error("Gemini returned an empty response");
+    if (!rawText) {
+      console.error(
+        "Gemini returned an empty response."
+      );
 
       return NextResponse.json(
         {
@@ -377,152 +529,86 @@ For example:
       );
     }
 
-    console.log("Gemini response:", text);
+    console.log(
+      "Gemini response:",
+      rawText
+    );
 
-    // -----------------------------------------
-    // 11. Parse JSON
-    // -----------------------------------------
+    /*
+     * 11. PARSE JSON
+     */
+    const cleanedText =
+      cleanJsonText(rawText);
 
     let parsed: Partial<AIResponse>;
 
     try {
-      parsed = JSON.parse(text);
+      parsed = JSON.parse(
+        cleanedText
+      );
     } catch (error) {
-      console.error("Invalid Gemini JSON:", error);
+      console.error(
+        "Invalid Gemini JSON:",
+        error
+      );
 
       return NextResponse.json(
         {
-          message: text
-            .replace(/^```json\s*/i, "")
-            .replace(/```$/i, "")
-            .trim(),
-
+          message:
+            "I couldn't process that response. Please try again.",
           action: null,
         },
         { status: 200 }
       );
     }
 
-    // -----------------------------------------
-    // 12. Validate message
-    // -----------------------------------------
-
+    /*
+     * 12. MESSAGE
+     */
     const message =
-      typeof parsed.message === "string" &&
+      typeof parsed.message ===
+        "string" &&
       parsed.message.trim().length > 0
         ? parsed.message.trim()
         : "How can I help you with our pharmacy products?";
 
-    // -----------------------------------------
-    // 13. Validate action
-    // -----------------------------------------
+    /*
+     * 13. ACTION
+     */
+    const action =
+      validateAction(
+        parsed.action,
+        products
+      );
 
-    let action: AIAction | null = null;
+    /*
+     * 14. SAFETY CHECK
+     *
+     * Do not allow Gemini to claim an
+     * order was placed.
+     */
+    let finalMessage = message;
 
-    if (parsed.action && typeof parsed.action === "object") {
-      const possibleAction = parsed.action as AIAction;
-
-      const allowedActions = [
-        "ADD_TO_CART",
-        "INCREASE_QUANTITY",
-        "DECREASE_QUANTITY",
-        "SET_QUANTITY",
-        "REMOVE_FROM_CART",
-        "CONFIRM_ORDER",
-      ] as const;
-
-      if (
-        allowedActions.includes(
-          possibleAction.type as (typeof allowedActions)[number]
-        )
-      ) {
-        action = {
-          type: possibleAction.type,
-        };
-
-        // -----------------------------------------
-        // Validate product ID
-        // -----------------------------------------
-
-        if (
-          typeof possibleAction.productId === "number" &&
-          products.some(
-            (product) =>
-              product.id === possibleAction.productId
-          )
-        ) {
-          action.productId = possibleAction.productId;
-        }
-
-        // -----------------------------------------
-        // Validate quantity
-        // -----------------------------------------
-
-        if (
-          typeof possibleAction.quantity === "number" &&
-          Number.isFinite(possibleAction.quantity) &&
-          possibleAction.quantity > 0
-        ) {
-          action.quantity = Math.floor(
-            possibleAction.quantity
-          );
-        }
-
-        // -----------------------------------------
-        // Cart actions requiring a product
-        // -----------------------------------------
-
-        const requiresProductId = [
-          "ADD_TO_CART",
-          "INCREASE_QUANTITY",
-          "DECREASE_QUANTITY",
-          "SET_QUANTITY",
-          "REMOVE_FROM_CART",
-        ].includes(possibleAction.type);
-
-        if (
-          requiresProductId &&
-          typeof action.productId !== "number"
-        ) {
-          action = null;
-        }
-
-        // -----------------------------------------
-        // ADD_TO_CART default quantity
-        // -----------------------------------------
-
-        if (
-          action &&
-          action.type === "ADD_TO_CART" &&
-          !action.quantity
-        ) {
-          action.quantity = 1;
-        }
-
-        // -----------------------------------------
-        // SET_QUANTITY requires quantity
-        // -----------------------------------------
-
-        if (
-          action &&
-          action.type === "SET_QUANTITY" &&
-          typeof action.quantity !== "number"
-        ) {
-          action = null;
-        }
-      }
+    if (
+      action?.type ===
+      "CONFIRM_ORDER"
+    ) {
+      finalMessage =
+        "Your order is ready for confirmation.";
     }
 
-    // -----------------------------------------
-    // 14. Return response to frontend
-    // -----------------------------------------
-
+    /*
+     * 15. RETURN
+     */
     return NextResponse.json({
-      message,
+      message: finalMessage,
       action,
     });
   } catch (error) {
-    console.error("PHARMA AI ERROR:", error);
+    console.error(
+      "PHARMA AI ERROR:",
+      error
+    );
 
     return NextResponse.json(
       {
