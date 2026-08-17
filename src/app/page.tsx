@@ -16,20 +16,23 @@ type Product = {
   price: number;
   description: string;
   emoji: string;
+  image: string;
 };
 
 type CartItem = Product & {
   quantity: number;
 };
 
+type ActionType =
+  | "ADD_TO_CART"
+  | "INCREASE_QUANTITY"
+  | "DECREASE_QUANTITY"
+  | "SET_QUANTITY"
+  | "REMOVE_FROM_CART"
+  | "CONFIRM_ORDER";
+
 type Action = {
-  type:
-    | "ADD_TO_CART"
-    | "INCREASE_QUANTITY"
-    | "DECREASE_QUANTITY"
-    | "SET_QUANTITY"
-    | "REMOVE_FROM_CART"
-    | "CONFIRM_ORDER";
+  type: ActionType;
   productId?: number;
   quantity?: number;
 };
@@ -39,6 +42,18 @@ type Message = {
   content: string;
 };
 
+/*
+|--------------------------------------------------------------------------
+| PRODUCTS
+|--------------------------------------------------------------------------
+| الصور موجودة داخل:
+| public/products/
+|
+| لذلك نستخدم:
+| /products/filename.jpg
+|--------------------------------------------------------------------------
+*/
+
 const PRODUCTS: Product[] = [
   {
     id: 1,
@@ -47,7 +62,9 @@ const PRODUCTS: Product[] = [
     price: 45,
     description: "Pain relief and fever reduction.",
     emoji: "💊",
+    image: "/products/panadol-extra.jpg",
   },
+
   {
     id: 2,
     name: "Cataflam 50mg",
@@ -55,7 +72,9 @@ const PRODUCTS: Product[] = [
     price: 65,
     description: "Anti-inflammatory pain relief.",
     emoji: "💊",
+    image: "/products/cataflam-50mg.jpg",
   },
+
   {
     id: 3,
     name: "Strepsils",
@@ -63,7 +82,9 @@ const PRODUCTS: Product[] = [
     price: 35,
     description: "Soothing lozenges for sore throat.",
     emoji: "🍬",
+    image: "/products/strepsils.jpg",
   },
+
   {
     id: 4,
     name: "Gaviscon",
@@ -71,74 +92,85 @@ const PRODUCTS: Product[] = [
     price: 85,
     description: "Relief from heartburn and acid reflux.",
     emoji: "🧴",
+    image: "/products/gaviscon.jpg",
   },
+
   {
     id: 5,
-    name: "Vitamin C",
+    name: "Vitamin C 1000mg",
     category: "Treatment",
     price: 120,
     description: "Vitamin C supplement.",
     emoji: "🍊",
+    image: "/products/vitamin-c-1000mg.jpg",
   },
+
   {
     id: 6,
-    name: "CeraVe Cleanser",
+    name: "CeraVe Moisturizing Cream",
     category: "Cosmetics",
     price: 450,
-    description: "Gentle facial cleanser.",
-    emoji: "🧴",
+    description: "Daily moisturizing cream for dry skin.",
+    emoji: "✨",
+    image: "/products/cerave-moisturizing-cream.jpg",
   },
+
   {
     id: 7,
-    name: "CeraVe Moisturizer",
+    name: "L'Oreal Revitalift",
     category: "Cosmetics",
     price: 520,
-    description: "Daily moisturizing cream.",
+    description: "Anti-aging skincare cream.",
     emoji: "✨",
+    image: "/products/loreal-revitalift.jpg",
   },
+
   {
     id: 8,
-    name: "La Roche-Posay Effaclar",
+    name: "Garnier Vitamin C Serum",
     category: "Cosmetics",
     price: 650,
-    description: "Skincare for oily and acne-prone skin.",
+    description: "Vitamin C facial serum for brighter-looking skin.",
     emoji: "🧴",
+    image: "/products/garnier-vitamin-c-serum.jpg",
   },
+
   {
     id: 9,
-    name: "Vichy Shampoo",
-    category: "Cosmetics",
-    price: 580,
-    description: "Hair and scalp care shampoo.",
-    emoji: "🫧",
-  },
-  {
-    id: 10,
     name: "Nivea Soft",
     category: "Cosmetics",
     price: 180,
-    description: "Light moisturizing cream.",
+    description: "Light moisturizing cream for face, body and hands.",
     emoji: "✨",
+    image: "/products/nivea-soft.jpg",
+  },
+
+  {
+    id: 10,
+    name: "Vaseline Cocoa Glow",
+    category: "Cosmetics",
+    price: 220,
+    description: "Cocoa butter body moisturizer.",
+    emoji: "🧴",
+    image: "/products/vaseline-cocoa-glow.jpg",
   },
 ];
 
 const INITIAL_MESSAGE: Message = {
   role: "assistant",
   content:
-    "Hi! I'm PharmaAI 👋 I can help you with our treatments, cosmetics, prices, availability, and your cart.",
+    "Hi! I'm PharmaAI 👋 Ask me about our treatments, cosmetics, prices, availability, or your cart.",
 };
 
 export default function Home() {
-  const [category, setCategory] = useState<
-    "All" | Category
-  >("All");
+  const [category, setCategory] = useState<"All" | Category>("All");
+
+  const [darkMode, setDarkMode] = useState(true);
 
   const [aiOpen, setAiOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [orderConfirmed, setOrderConfirmed] = useState(false);
-
-  const [darkMode, setDarkMode] = useState(true);
 
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -150,65 +182,53 @@ export default function Home() {
   ]);
 
   /*
-   * Load saved cart and theme.
-   */
+  |--------------------------------------------------------------------------
+  | LOAD SAVED DATA
+  |--------------------------------------------------------------------------
+  */
+
   useEffect(() => {
     try {
-      const savedCart =
-        localStorage.getItem("pharma-cart");
+      const savedCart = localStorage.getItem("pharma-cart");
 
       if (savedCart) {
-        const parsedCart = JSON.parse(savedCart);
+        const parsed = JSON.parse(savedCart);
 
-        if (Array.isArray(parsedCart)) {
-          const validCart = parsedCart.filter(
-            (item) =>
-              item &&
-              typeof item.id === "number" &&
-              typeof item.name === "string" &&
-              typeof item.price === "number" &&
-              typeof item.quantity === "number" &&
-              item.quantity > 0
-          );
-
-          setCart(validCart);
+        if (Array.isArray(parsed)) {
+          setCart(parsed);
         }
       }
 
-      const savedTheme =
-        localStorage.getItem("pharma-theme");
+      const savedTheme = localStorage.getItem("pharma-theme");
 
       if (savedTheme === "light") {
         setDarkMode(false);
       }
     } catch (error) {
-      console.error(
-        "Failed to load saved data:",
-        error
-      );
+      console.error("Failed to load saved data:", error);
     }
   }, []);
 
   /*
-   * Save cart.
-   */
+  |--------------------------------------------------------------------------
+  | SAVE CART
+  |--------------------------------------------------------------------------
+  */
+
   useEffect(() => {
     try {
-      localStorage.setItem(
-        "pharma-cart",
-        JSON.stringify(cart)
-      );
+      localStorage.setItem("pharma-cart", JSON.stringify(cart));
     } catch (error) {
-      console.error(
-        "Failed to save cart:",
-        error
-      );
+      console.error("Failed to save cart:", error);
     }
   }, [cart]);
 
   /*
-   * Save theme.
-   */
+  |--------------------------------------------------------------------------
+  | SAVE THEME
+  |--------------------------------------------------------------------------
+  */
+
   useEffect(() => {
     try {
       localStorage.setItem(
@@ -216,12 +236,15 @@ export default function Home() {
         darkMode ? "dark" : "light"
       );
     } catch (error) {
-      console.error(
-        "Failed to save theme:",
-        error
-      );
+      console.error("Failed to save theme:", error);
     }
   }, [darkMode]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | FILTER PRODUCTS
+  |--------------------------------------------------------------------------
+  */
 
   const filteredProducts = useMemo(() => {
     if (category === "All") {
@@ -233,12 +256,24 @@ export default function Home() {
     );
   }, [category]);
 
+  /*
+  |--------------------------------------------------------------------------
+  | CART COUNT
+  |--------------------------------------------------------------------------
+  */
+
   const cartCount = useMemo(() => {
     return cart.reduce(
       (total, item) => total + item.quantity,
       0
     );
   }, [cart]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | CART TOTAL
+  |--------------------------------------------------------------------------
+  */
 
   const cartTotal = useMemo(() => {
     return cart.reduce(
@@ -249,8 +284,24 @@ export default function Home() {
   }, [cart]);
 
   /*
-   * Add product to cart.
-   */
+  |--------------------------------------------------------------------------
+  | GET CART QUANTITY
+  |--------------------------------------------------------------------------
+  */
+
+  function getCartQuantity(productId: number) {
+    return (
+      cart.find((item) => item.id === productId)
+        ?.quantity ?? 0
+    );
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | ADD TO CART
+  |--------------------------------------------------------------------------
+  */
+
   function addToCart(
     productId: number,
     quantity = 1
@@ -259,14 +310,12 @@ export default function Home() {
       (item) => item.id === productId
     );
 
-    if (!product) {
-      return;
-    }
+    if (!product) return;
 
-    const safeQuantity = Math.max(
-      1,
-      Math.floor(quantity)
-    );
+    const safeQuantity =
+      Number.isFinite(quantity) && quantity > 0
+        ? Math.floor(quantity)
+        : 1;
 
     setCart((currentCart) => {
       const existing = currentCart.find(
@@ -296,8 +345,11 @@ export default function Home() {
   }
 
   /*
-   * Increase quantity.
-   */
+  |--------------------------------------------------------------------------
+  | INCREASE
+  |--------------------------------------------------------------------------
+  */
+
   function increaseQuantity(productId: number) {
     setCart((currentCart) =>
       currentCart.map((item) =>
@@ -312,8 +364,11 @@ export default function Home() {
   }
 
   /*
-   * Decrease quantity.
-   */
+  |--------------------------------------------------------------------------
+  | DECREASE
+  |--------------------------------------------------------------------------
+  */
+
   function decreaseQuantity(productId: number) {
     setCart((currentCart) =>
       currentCart
@@ -330,15 +385,16 @@ export default function Home() {
   }
 
   /*
-   * Set exact quantity.
-   */
+  |--------------------------------------------------------------------------
+  | SET QUANTITY
+  |--------------------------------------------------------------------------
+  */
+
   function setQuantity(
     productId: number,
     quantity: number
   ) {
-    if (!Number.isFinite(quantity)) {
-      return;
-    }
+    if (!Number.isFinite(quantity)) return;
 
     const safeQuantity = Math.max(
       1,
@@ -358,8 +414,11 @@ export default function Home() {
   }
 
   /*
-   * Remove product.
-   */
+  |--------------------------------------------------------------------------
+  | REMOVE
+  |--------------------------------------------------------------------------
+  */
+
   function removeFromCart(productId: number) {
     setCart((currentCart) =>
       currentCart.filter(
@@ -369,45 +428,48 @@ export default function Home() {
   }
 
   /*
-   * Execute AI action.
-   */
+  |--------------------------------------------------------------------------
+  | CLEAR CART
+  |--------------------------------------------------------------------------
+  */
+
+  function clearCart() {
+    setCart([]);
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | EXECUTE AI ACTION
+  |--------------------------------------------------------------------------
+  */
+
   function executeAIAction(
     action: Action | null | undefined
   ) {
-    if (!action) {
-      return;
-    }
+    if (!action) return;
 
     const productId = action.productId;
 
     switch (action.type) {
       case "ADD_TO_CART":
-        if (
-          typeof productId === "number"
-        ) {
+        if (typeof productId === "number") {
           addToCart(
             productId,
             typeof action.quantity === "number"
               ? action.quantity
               : 1
           );
-
-          setCartOpen(true);
         }
         break;
 
       case "INCREASE_QUANTITY":
-        if (
-          typeof productId === "number"
-        ) {
+        if (typeof productId === "number") {
           increaseQuantity(productId);
         }
         break;
 
       case "DECREASE_QUANTITY":
-        if (
-          typeof productId === "number"
-        ) {
+        if (typeof productId === "number") {
           decreaseQuantity(productId);
         }
         break;
@@ -425,9 +487,7 @@ export default function Home() {
         break;
 
       case "REMOVE_FROM_CART":
-        if (
-          typeof productId === "number"
-        ) {
+        if (typeof productId === "number") {
           removeFromCart(productId);
         }
         break;
@@ -436,35 +496,27 @@ export default function Home() {
         if (cart.length > 0) {
           setCartOpen(false);
           setCheckoutOpen(true);
+          setOrderConfirmed(false);
+        } else {
+          setMessages((current) => [
+            ...current,
+            {
+              role: "assistant",
+              content:
+                "Your cart is empty. Add a product before checkout.",
+            },
+          ]);
         }
         break;
-
-      default:
-        break;
     }
   }
 
   /*
-   * Current cart for AI.
-   */
-  function getCartForAI() {
-    if (cart.length === 0) {
-      return "The cart is currently empty.";
-    }
+  |--------------------------------------------------------------------------
+  | SEND MESSAGE
+  |--------------------------------------------------------------------------
+  */
 
-    return cart
-      .map(
-        (item) =>
-          `${item.name} | quantity: ${item.quantity} | unit price: EGP ${item.price} | subtotal: EGP ${
-            item.price * item.quantity
-          }`
-      )
-      .join("\n");
-  }
-
-  /*
-   * Send message to PharmaAI.
-   */
   async function sendMessage(
     customMessage?: string
   ) {
@@ -472,9 +524,7 @@ export default function Home() {
       customMessage ?? input
     ).trim();
 
-    if (!messageText || loading) {
-      return;
-    }
+    if (!messageText || loading) return;
 
     const userMessage: Message = {
       role: "user",
@@ -491,892 +541,411 @@ export default function Home() {
     setLoading(true);
 
     try {
-      const response = await fetch(
-        "/api/chat",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-          body: JSON.stringify({
-            messages: updatedMessages,
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: updatedMessages,
 
-            products: PRODUCTS,
+          products: PRODUCTS.map((product) => ({
+            id: product.id,
+            name: product.name,
+            category: product.category,
+            price: product.price,
+            description: product.description,
+          })),
 
-            cart: cart.map(
-              ({
-                id,
-                name,
-                quantity,
-                price,
-              }) => ({
-                id,
-                name,
-                quantity,
-                price,
-              })
-            ),
+          cart: cart.map((item) => ({
+            id: item.id,
+            name: item.name,
+            quantity: item.quantity,
+            price: item.price,
+          })),
+        }),
+      });
 
-            cartText: getCartForAI(),
-          }),
-        }
-      );
-
-      let data: {
+      const data: {
         message?: string;
         action?: Action | null;
-      };
-
-      try {
-        data = await response.json();
-      } catch {
-        throw new Error(
-          "Invalid server response."
-        );
-      }
+      } = await response.json();
 
       if (!response.ok) {
         throw new Error(
-          data?.message ||
-            "AI request failed."
+          data.message ?? "AI request failed."
         );
       }
 
-      const assistantMessage: Message = {
-        role: "assistant",
-        content:
-          data?.message ||
-          "I couldn't generate a response.",
-      };
+      setMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          content:
+            data.message?.trim() ||
+            "I couldn't generate a response.",
+        },
+      ]);
 
-      setMessages(
-        (currentMessages) => [
-          ...currentMessages,
-          assistantMessage,
-        ]
-      );
-
-      if (data?.action) {
+      if (data.action) {
         executeAIAction(data.action);
       }
     } catch (error) {
       console.error(
-        "AI request failed:",
+        "PharmaAI request failed:",
         error
       );
 
-      setMessages(
-        (currentMessages) => [
-          ...currentMessages,
-          {
-            role: "assistant",
-            content:
-              "Sorry, I couldn't connect to PharmaAI right now. Please try again.",
-          },
-        ]
-      );
+      setMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          content:
+            "Sorry, I couldn't connect to PharmaAI right now. Please try again.",
+        },
+      ]);
     } finally {
       setLoading(false);
     }
   }
 
+  /*
+  |--------------------------------------------------------------------------
+  | FORM
+  |--------------------------------------------------------------------------
+  */
+
   function handleSubmit(
     event: FormEvent<HTMLFormElement>
   ) {
     event.preventDefault();
-    sendMessage();
+    void sendMessage();
   }
 
-  function askAboutProduct(
-    product: Product
-  ) {
+  /*
+  |--------------------------------------------------------------------------
+  | ASK ABOUT PRODUCT
+  |--------------------------------------------------------------------------
+  */
+
+  function askAboutProduct(product: Product) {
     setAiOpen(true);
 
-    sendMessage(
-      `Tell me about ${product.name} and its price.`
+    void sendMessage(
+      `Tell me about ${product.name}, its price, and what it is used for.`
     );
   }
 
+  /*
+  |--------------------------------------------------------------------------
+  | CLEAR CHAT
+  |--------------------------------------------------------------------------
+  */
+
   function clearChat() {
-    if (loading) {
-      return;
-    }
-
     setMessages([INITIAL_MESSAGE]);
-  }
-
-  function openCheckout() {
-    if (cart.length === 0) {
-      return;
-    }
-
-    setCartOpen(false);
-    setCheckoutOpen(true);
-  }
-
-  function confirmOrder() {
-    if (cart.length === 0) {
-      return;
-    }
-
-    setOrderConfirmed(true);
-    setCart([]);
-  }
-
-  function closeCheckout() {
-    setCheckoutOpen(false);
-    setOrderConfirmed(false);
   }
 
   return (
     <main
       className={
         darkMode
-          ? "app dark"
-          : "app light"
+          ? "page dark"
+          : "page light"
       }
     >
-      <style jsx global>{`
-        * {
-          box-sizing: border-box;
-        }
+      <div className="background-glow glow-one" />
+      <div className="background-glow glow-two" />
 
-        body {
-          margin: 0;
-          font-family:
-            Inter,
-            Arial,
-            Helvetica,
-            sans-serif;
-        }
+      {/* =========================================================
+          NAVBAR
+      ========================================================= */}
 
-        button,
-        input {
-          font: inherit;
-        }
-
-        button {
-          -webkit-tap-highlight-color: transparent;
-        }
-
-        .app {
-          min-height: 100vh;
-          background:
-            radial-gradient(
-              circle at top right,
-              rgba(126, 255, 0, 0.08),
-              transparent 30%
-            ),
-            #07111f;
-          color: #ffffff;
-          transition: 0.3s;
-        }
-
-        .app.light {
-          background: #f5f8fc;
-          color: #102033;
-        }
-
-        .container {
-          width: min(1180px, 92%);
-          margin: auto;
-        }
-
-        .navbar {
-          position: sticky;
-          top: 0;
-          z-index: 20;
-          backdrop-filter: blur(20px);
-          background: rgba(7, 17, 31, 0.8);
-          border-bottom: 1px solid
-            rgba(255, 255, 255, 0.08);
-        }
-
-        .light .navbar {
-          background: rgba(255, 255, 255, 0.85);
-          border-bottom-color: rgba(0, 0, 0, 0.08);
-        }
-
-        .nav-inner {
-          height: 78px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 20px;
-        }
-
-        .logo {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          font-weight: 800;
-          font-size: 20px;
-        }
-
-        .logo-icon {
-          width: 42px;
-          height: 42px;
-          border-radius: 14px;
-          display: grid;
-          place-items: center;
-          background: #8cff00;
-          color: #07111f;
-          font-size: 25px;
-          font-weight: 900;
-        }
-
-        .nav-actions {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-
-        .icon-btn {
-          border: 1px solid
-            rgba(255, 255, 255, 0.1);
-          background: rgba(255, 255, 255, 0.05);
-          color: inherit;
-          width: 44px;
-          height: 44px;
-          border-radius: 14px;
-          cursor: pointer;
-          transition: 0.2s;
-        }
-
-        .icon-btn:hover {
-          transform: translateY(-2px);
-          background: rgba(255, 255, 255, 0.1);
-        }
-
-        .cart-btn {
-          position: relative;
-          border: 0;
-          background: #8cff00;
-          color: #07111f;
-          padding: 12px 18px;
-          border-radius: 14px;
-          cursor: pointer;
-          font-weight: 800;
-        }
-
-        .cart-badge {
-          position: absolute;
-          right: -6px;
-          top: -7px;
-          min-width: 21px;
-          height: 21px;
-          border-radius: 50%;
-          display: grid;
-          place-items: center;
-          background: #ff4f6d;
-          color: white;
-          font-size: 11px;
-        }
-
-        .hero {
-          padding: 90px 0 55px;
-          text-align: center;
-        }
-
-        .hero-badge {
-          display: inline-flex;
-          padding: 8px 14px;
-          border-radius: 999px;
-          background: rgba(140, 255, 0, 0.1);
-          color: #8cff00;
-          border: 1px solid
-            rgba(140, 255, 0, 0.2);
-          font-size: 13px;
-          font-weight: 700;
-        }
-
-        .hero h1 {
-          font-size: clamp(42px, 7vw, 78px);
-          line-height: 0.98;
-          margin: 20px auto;
-          max-width: 900px;
-          letter-spacing: -3px;
-        }
-
-        .hero h1 span {
-          color: #8cff00;
-        }
-
-        .hero p {
-          max-width: 650px;
-          margin: auto;
-          opacity: 0.7;
-          font-size: 17px;
-          line-height: 1.7;
-        }
-
-        .filters {
-          display: flex;
-          justify-content: center;
-          gap: 10px;
-          margin-bottom: 35px;
-          flex-wrap: wrap;
-        }
-
-        .filter-btn {
-          padding: 11px 20px;
-          border-radius: 999px;
-          border: 1px solid
-            rgba(255, 255, 255, 0.1);
-          background: rgba(255, 255, 255, 0.04);
-          color: inherit;
-          cursor: pointer;
-        }
-
-        .filter-btn.active {
-          background: #8cff00;
-          color: #07111f;
-          border-color: #8cff00;
-          font-weight: 800;
-        }
-
-        .products {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 18px;
-          padding-bottom: 90px;
-        }
-
-        .product {
-          border-radius: 24px;
-          padding: 20px;
-          background: rgba(255, 255, 255, 0.055);
-          border: 1px solid
-            rgba(255, 255, 255, 0.08);
-          transition: 0.25s;
-        }
-
-        .light .product {
-          background: white;
-          border-color: rgba(0, 0, 0, 0.06);
-          box-shadow: 0 10px 30px
-            rgba(20, 40, 60, 0.06);
-        }
-
-        .product:hover {
-          transform: translateY(-5px);
-        }
-
-        .product-image {
-          height: 180px;
-          border-radius: 18px;
-          background: rgba(255, 255, 255, 0.05);
-          display: grid;
-          place-items: center;
-          font-size: 70px;
-          margin-bottom: 18px;
-        }
-
-        .product-category {
-          color: #8cff00;
-          font-size: 12px;
-          font-weight: 800;
-          text-transform: uppercase;
-          letter-spacing: 1px;
-        }
-
-        .product h3 {
-          margin: 8px 0;
-        }
-
-        .product p {
-          opacity: 0.6;
-          min-height: 44px;
-          line-height: 1.5;
-        }
-
-        .product-bottom {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 10px;
-          margin-top: 18px;
-        }
-
-        .price {
-          font-size: 20px;
-          font-weight: 900;
-        }
-
-        .product-actions {
-          display: flex;
-          gap: 7px;
-        }
-
-        .add-btn,
-        .ask-btn {
-          border: 0;
-          border-radius: 12px;
-          padding: 10px 13px;
-          cursor: pointer;
-          font-weight: 700;
-        }
-
-        .add-btn {
-          background: #8cff00;
-          color: #07111f;
-        }
-
-        .ask-btn {
-          background: rgba(255, 255, 255, 0.08);
-          color: inherit;
-        }
-
-        .ai-button {
-          position: fixed;
-          right: 25px;
-          bottom: 25px;
-          z-index: 50;
-          border: 0;
-          border-radius: 18px;
-          padding: 15px 20px;
-          background: #8cff00;
-          color: #07111f;
-          font-weight: 900;
-          cursor: pointer;
-          box-shadow: 0 15px 40px
-            rgba(0, 0, 0, 0.3);
-        }
-
-        .ai-panel {
-          position: fixed;
-          right: 25px;
-          bottom: 90px;
-          width: min(430px, calc(100vw - 30px));
-          height: min(650px, calc(100vh - 120px));
-          z-index: 60;
-          display: flex;
-          flex-direction: column;
-          border-radius: 26px;
-          overflow: hidden;
-          background: #0d1b2d;
-          border: 1px solid
-            rgba(255, 255, 255, 0.1);
-          box-shadow: 0 30px 80px
-            rgba(0, 0, 0, 0.45);
-        }
-
-        .ai-header {
-          padding: 18px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          border-bottom: 1px solid
-            rgba(255, 255, 255, 0.08);
-        }
-
-        .ai-title {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-
-        .ai-logo {
-          width: 43px;
-          height: 43px;
-          display: grid;
-          place-items: center;
-          border-radius: 14px;
-          background: #8cff00;
-          color: #07111f;
-          font-weight: 900;
-          font-size: 24px;
-        }
-
-        .online {
-          font-size: 11px;
-          opacity: 0.5;
-        }
-
-        .online-dot {
-          display: inline-block;
-          width: 7px;
-          height: 7px;
-          background: #8cff00;
-          border-radius: 50%;
-          margin-right: 5px;
-        }
-
-        .close-ai {
-          border: 0;
-          background: rgba(255, 255, 255, 0.06);
-          color: white;
-          width: 36px;
-          height: 36px;
-          border-radius: 10px;
-          cursor: pointer;
-        }
-
-        .messages {
-          flex: 1;
-          overflow-y: auto;
-          padding: 20px;
-        }
-
-        .message-row {
-          display: flex;
-          margin-bottom: 14px;
-        }
-
-        .message-row.user {
-          justify-content: flex-end;
-        }
-
-        .message {
-          max-width: 85%;
-          padding: 12px 15px;
-          border-radius: 17px;
-          line-height: 1.5;
-          font-size: 14px;
-          white-space: pre-wrap;
-        }
-
-        .message.assistant {
-          background: rgba(255, 255, 255, 0.07);
-          border-bottom-left-radius: 5px;
-        }
-
-        .message.user {
-          background: #8cff00;
-          color: #07111f;
-          border-bottom-right-radius: 5px;
-        }
-
-        .typing {
-          opacity: 0.6;
-          font-size: 13px;
-          padding: 8px 2px;
-        }
-
-        .quick-actions {
-          padding: 10px 15px;
-          display: flex;
-          gap: 7px;
-          overflow-x: auto;
-          border-top: 1px solid
-            rgba(255, 255, 255, 0.06);
-        }
-
-        .quick-btn {
-          white-space: nowrap;
-          border: 1px solid
-            rgba(255, 255, 255, 0.1);
-          background: rgba(255, 255, 255, 0.04);
-          color: white;
-          padding: 9px 12px;
-          border-radius: 12px;
-          cursor: pointer;
-          font-size: 12px;
-        }
-
-        .input-area {
-          padding: 12px 15px 16px;
-        }
-
-        .input-form {
-          display: flex;
-          gap: 8px;
-        }
-
-        .chat-input {
-          flex: 1;
-          min-width: 0;
-          border: 1px solid
-            rgba(255, 255, 255, 0.1);
-          background: rgba(255, 255, 255, 0.05);
-          color: white;
-          outline: none;
-          border-radius: 14px;
-          padding: 13px;
-        }
-
-        .send-btn {
-          width: 48px;
-          border: 0;
-          border-radius: 14px;
-          background: #8cff00;
-          color: #07111f;
-          cursor: pointer;
-          font-size: 19px;
-          font-weight: 900;
-        }
-
-        .send-btn:disabled {
-          opacity: 0.4;
-          cursor: not-allowed;
-        }
-
-        .disclaimer {
-          font-size: 10px;
-          opacity: 0.35;
-          margin-top: 8px;
-        }
-
-        .cart-overlay {
-          position: fixed;
-          inset: 0;
-          background: rgba(0, 0, 0, 0.55);
-          z-index: 70;
-        }
-
-        .cart-panel {
-          position: absolute;
-          right: 0;
-          top: 0;
-          height: 100%;
-          width: min(440px, 100%);
-          background: #0d1b2d;
-          padding: 25px;
-          overflow-y: auto;
-        }
-
-        .cart-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 25px;
-        }
-
-        .cart-item {
-          display: flex;
-          justify-content: space-between;
-          gap: 15px;
-          padding: 15px 0;
-          border-bottom: 1px solid
-            rgba(255, 255, 255, 0.08);
-        }
-
-        .quantity {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          margin-top: 10px;
-        }
-
-        .quantity button {
-          width: 28px;
-          height: 28px;
-          border: 0;
-          border-radius: 8px;
-          background: rgba(255, 255, 255, 0.08);
-          color: white;
-          cursor: pointer;
-        }
-
-        .checkout {
-          width: 100%;
-          border: 0;
-          border-radius: 14px;
-          padding: 14px;
-          margin-top: 20px;
-          background: #8cff00;
-          color: #07111f;
-          font-weight: 900;
-          cursor: pointer;
-        }
-
-        .empty {
-          text-align: center;
-          opacity: 0.5;
-          padding: 60px 10px;
-        }
-
-        .checkout-modal {
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          transform: translate(-50%, -50%);
-          width: min(420px, 90%);
-          background: #0d1b2d;
-          padding: 30px;
-          border-radius: 25px;
-          text-align: center;
-        }
-
-        .cancel-btn {
-          width: 100%;
-          border: 0;
-          border-radius: 14px;
-          padding: 14px;
-          margin-top: 10px;
-          background: rgba(255, 255, 255, 0.08);
-          color: white;
-          font-weight: 800;
-          cursor: pointer;
-        }
-
-        @media (max-width: 850px) {
-          .products {
-            grid-template-columns: repeat(2, 1fr);
-          }
-        }
-
-        @media (max-width: 580px) {
-          .products {
-            grid-template-columns: 1fr;
-          }
-
-          .hero {
-            padding-top: 60px;
-          }
-
-          .nav-inner {
-            height: 68px;
-          }
-
-          .ai-panel {
-            right: 10px;
-            bottom: 80px;
-            width: calc(100vw - 20px);
-          }
-
-          .ai-button {
-            right: 15px;
-            bottom: 15px;
-          }
-
-          .product-bottom {
-            align-items: flex-end;
-          }
-
-          .product-actions {
-            flex-wrap: wrap;
-            justify-content: flex-end;
-          }
-        }
-      `}</style>
-
-      {/* NAVBAR */}
       <nav className="navbar">
-        <div className="container nav-inner">
-          <div className="logo">
-            <div className="logo-icon">+</div>
-
-            <div>
-              <div>PharmaAI</div>
-
-              <small
-                style={{
-                  opacity: 0.45,
-                  fontSize: 10,
-                }}
-              >
-                Smart Pharmacy
-              </small>
-            </div>
+        <div className="logo">
+          <div className="logo-icon">
+            +
           </div>
 
-          <div className="nav-actions">
-            <button
-              className="icon-btn"
-              onClick={() =>
-                setDarkMode(
-                  (value) => !value
-                )
-              }
-              title="Toggle theme"
-            >
-              {darkMode ? "☀️" : "🌙"}
-            </button>
+          <div>
+            <strong>
+              Pharma<span>AI</span>
+            </strong>
 
-            <button
-              className="cart-btn"
-              onClick={() =>
-                setCartOpen(true)
-              }
-            >
-              🛒 Cart
-
-              {cartCount > 0 && (
-                <span className="cart-badge">
-                  {cartCount}
-                </span>
-              )}
-            </button>
+            <small>
+              Smart Pharmacy
+            </small>
           </div>
+        </div>
+
+        <div className="nav-right">
+          <div className="online-status">
+            <span />
+            AI Online
+          </div>
+
+          <button
+            className="theme-button"
+            type="button"
+            onClick={() =>
+              setDarkMode((value) => !value)
+            }
+            title="Toggle theme"
+          >
+            {darkMode ? "☀️" : "🌙"}
+          </button>
+
+          <button
+            className="ai-button"
+            type="button"
+            onClick={() =>
+              setAiOpen((value) => !value)
+            }
+          >
+            <span className="ai-button-icon">
+              ✨
+            </span>
+
+            PharmaAI
+          </button>
+
+          <button
+            className="cart-button"
+            type="button"
+            onClick={() => setCartOpen(true)}
+          >
+            🛒
+
+            <span>
+              Cart
+            </span>
+
+            {cartCount > 0 && (
+              <span className="cart-count">
+                {cartCount}
+              </span>
+            )}
+          </button>
         </div>
       </nav>
 
-      {/* HERO */}
-      <section className="hero container">
-        <div className="hero-badge">
-          ✨ Smart Pharmacy Assistant
-        </div>
+      {/* =========================================================
+          HERO
+      ========================================================= */}
 
-        <h1>
-          Your Pharmacy,
-          <br />
-          <span>Smarter.</span>
-        </h1>
+      <section className="hero">
+        <div className="hero-text">
+          <div className="badge">
+            ✦ SMART PHARMACY ASSISTANT
+          </div>
 
-        <p>
-          Find treatments and cosmetics,
-          check prices, and manage your
-          cart with PharmaAI.
-        </p>
-      </section>
+          <h1>
+            Your Pharmacy.
+            <br />
+            <span>
+              Smarter.
+            </span>
+          </h1>
 
-      {/* PRODUCTS */}
-      <section className="container">
-        <div className="filters">
-          {(
-            [
-              "All",
-              "Treatment",
-              "Cosmetics",
-            ] as const
-          ).map((item) => (
+          <p>
+            Discover treatments and cosmetics,
+            check prices, manage your cart, and
+            get instant assistance from PharmaAI.
+          </p>
+
+          <div className="hero-actions">
             <button
-              key={item}
-              className={
-                category === item
-                  ? "filter-btn active"
-                  : "filter-btn"
-              }
+              className="primary-button"
+              type="button"
               onClick={() =>
-                setCategory(item)
+                document
+                  .getElementById("products")
+                  ?.scrollIntoView({
+                    behavior: "smooth",
+                  })
               }
             >
-              {item}
+              Explore Products →
             </button>
-          ))}
+
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() =>
+                setAiOpen(true)
+              }
+            >
+              ✨ Ask PharmaAI
+            </button>
+          </div>
         </div>
 
-        <div className="products">
-          {filteredProducts.map(
-            (product) => (
-              <article
-                className="product"
-                key={product.id}
+        <div className="hero-card">
+          <div className="hero-card-icon">
+            ✨
+          </div>
+
+          <div>
+            <strong>
+              PharmaAI Assistant
+            </strong>
+
+            <p>
+              Ready to help with your pharmacy
+              shopping.
+            </p>
+          </div>
+
+          <div className="hero-card-status">
+            <span />
+            Online
+          </div>
+        </div>
+      </section>
+
+      {/* =========================================================
+          PRODUCTS
+      ========================================================= */}
+
+      <section
+        className="products-section"
+        id="products"
+      >
+        <div className="section-header">
+          <div>
+            <div className="section-label">
+              PHARMACY CATALOG
+            </div>
+
+            <h2>
+              Our Products
+            </h2>
+
+            <p>
+              Choose a product or ask PharmaAI
+              about it.
+            </p>
+          </div>
+
+          <div className="category-menu">
+            {(
+              [
+                "All",
+                "Treatment",
+                "Cosmetics",
+              ] as const
+            ).map((item) => (
+              <button
+                key={item}
+                type="button"
+                className={
+                  category === item
+                    ? "selected"
+                    : ""
+                }
+                onClick={() =>
+                  setCategory(item)
+                }
               >
-                <div className="product-image">
-                  {product.emoji}
-                </div>
+                {item}
+              </button>
+            ))}
+          </div>
+        </div>
 
-                <div className="product-category">
-                  {product.category}
-                </div>
+        <div className="products-grid">
+          {filteredProducts.map(
+            (product) => {
+              const quantity =
+                getCartQuantity(
+                  product.id
+                );
 
-                <h3>{product.name}</h3>
+              return (
+                <article
+                  className="product-card"
+                  key={product.id}
+                >
+                  {/* =================================================
+                      PRODUCT IMAGE
+                  ================================================= */}
 
-                <p>
-                  {product.description}
-                </p>
+                  <div className="product-image-box">
+                    <img
+                      src={product.image}
+                      alt={product.name}
+                      className="product-image"
+                      loading="lazy"
+                      onError={(event) => {
+                        /*
+                         * لو الصورة مش موجودة
+                         * نخفي الصورة ونظهر الـ emoji
+                         */
+                        event.currentTarget.style.display =
+                          "none";
 
-                <div className="product-bottom">
-                  <div className="price">
-                    EGP {product.price}
+                        const fallback =
+                          event.currentTarget
+                            .nextElementSibling;
+
+                        if (
+                          fallback instanceof
+                          HTMLElement
+                        ) {
+                          fallback.style.display =
+                            "flex";
+                        }
+                      }}
+                    />
+
+                    <div
+                      className="product-image-fallback"
+                      style={{
+                        display: "none",
+                      }}
+                    >
+                      <span>
+                        {product.emoji}
+                      </span>
+
+                      <small>
+                        {product.category}
+                      </small>
+                    </div>
+
+                    <div className="product-image-overlay">
+                      {product.category}
+                    </div>
                   </div>
 
-                  <div className="product-actions">
+                  {/* PRODUCT INFO */}
+
+                  <div className="product-category">
+                    {product.category}
+                  </div>
+
+                  <h3>
+                    {product.name}
+                  </h3>
+
+                  <p>
+                    {product.description}
+                  </p>
+
+                  <div className="product-bottom">
+                    <div className="price">
+                      <small>
+                        PRICE
+                      </small>
+
+                      <strong>
+                        EGP {product.price}
+                      </strong>
+                    </div>
+
                     <button
-                      className="ask-btn"
+                      className="ask-product"
+                      type="button"
                       onClick={() =>
                         askAboutProduct(
                           product
@@ -1386,97 +955,331 @@ export default function Home() {
                       Ask AI
                     </button>
 
-                    <button
-                      className="add-btn"
-                      onClick={() =>
-                        addToCart(
-                          product.id
-                        )
-                      }
-                    >
-                      Add
-                    </button>
+                    {quantity === 0 ? (
+                      <button
+                        className="add-cart-button"
+                        type="button"
+                        onClick={() =>
+                          addToCart(
+                            product.id
+                          )
+                        }
+                        title="Add to cart"
+                      >
+                        +
+                      </button>
+                    ) : (
+                      <div className="product-quantity">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            decreaseQuantity(
+                              product.id
+                            )
+                          }
+                        >
+                          −
+                        </button>
+
+                        <span>
+                          {quantity}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            increaseQuantity(
+                              product.id
+                            )
+                          }
+                        >
+                          +
+                        </button>
+                      </div>
+                    )}
                   </div>
-                </div>
-              </article>
-            )
+
+                  {quantity > 0 && (
+                    <div className="in-cart-label">
+                      ✓ {quantity} in your cart
+                    </div>
+                  )}
+                </article>
+              );
+            }
           )}
         </div>
       </section>
 
-      {/* AI BUTTON */}
-      {!aiOpen && (
-        <button
-          className="ai-button"
-          onClick={() =>
-            setAiOpen(true)
-          }
-        >
-          ✨ Ask PharmaAI
-        </button>
-      )}
+      {/* =========================================================
+          HOW IT WORKS
+      ========================================================= */}
 
-      {/* AI CHAT */}
+      <section className="how-section">
+        <div className="section-label">
+          SIMPLE & SMART
+        </div>
+
+        <h2>
+          Pharmacy shopping,
+          <span>
+            {" "}simplified.
+          </span>
+        </h2>
+
+        <div className="steps">
+          <div className="step">
+            <div className="step-number">
+              01
+            </div>
+
+            <h3>
+              Find a product
+            </h3>
+
+            <p>
+              Browse treatments and cosmetics
+              available in our pharmacy.
+            </p>
+          </div>
+
+          <div className="step">
+            <div className="step-number">
+              02
+            </div>
+
+            <h3>
+              Ask PharmaAI
+            </h3>
+
+            <p>
+              Ask about products, prices,
+              quantities, or your cart.
+            </p>
+          </div>
+
+          <div className="step">
+            <div className="step-number">
+              03
+            </div>
+
+            <h3>
+              Checkout
+            </h3>
+
+            <p>
+              Review your cart and confirm your
+              order when you're ready.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* =========================================================
+          CONTACT
+      ========================================================= */}
+
+      <section className="contact-section">
+        <div className="section-label">
+          PHARMAAI
+        </div>
+
+        <h2>
+          Need <span>help?</span>
+        </h2>
+
+        <div className="contact-grid">
+          <div className="contact-card">
+            <div className="contact-icon">
+              ✨
+            </div>
+
+            <div>
+              <small>
+                AI ASSISTANT
+              </small>
+
+              <strong>
+                Ask PharmaAI anything about
+                our catalog.
+              </strong>
+            </div>
+          </div>
+
+          <div className="contact-card">
+            <div className="contact-icon">
+              💊
+            </div>
+
+            <div>
+              <small>
+                PRODUCTS
+              </small>
+
+              <strong>
+                Treatments & cosmetics in one
+                place.
+              </strong>
+            </div>
+          </div>
+
+          <div className="contact-card">
+            <div className="contact-icon">
+              🛒
+            </div>
+
+            <div>
+              <small>
+                SHOPPING CART
+              </small>
+
+              <strong>
+                Easily control your quantities
+                and total.
+              </strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* =========================================================
+          FOOTER
+      ========================================================= */}
+
+      <footer>
+        <div className="footer-top">
+          <div className="logo">
+            <div className="logo-icon">
+              +
+            </div>
+
+            <div>
+              <strong>
+                Pharma<span>AI</span>
+              </strong>
+
+              <p>
+                Smart Pharmacy Experience
+              </p>
+            </div>
+          </div>
+
+          <p>
+            Product information only. Always
+            consult a healthcare professional
+            when appropriate.
+          </p>
+        </div>
+
+        <div className="footer-line" />
+
+        <div className="footer-bottom">
+          <span>
+            © 2026 PharmaAI
+          </span>
+
+          <span>
+            Built with Next.js + Gemini AI
+          </span>
+        </div>
+      </footer>
+
+      {/* =========================================================
+          FLOATING AI
+      ========================================================= */}
+
+      <button
+        className={
+          aiOpen
+            ? "floating-ai-button opened"
+            : "floating-ai-button"
+        }
+        type="button"
+        onClick={() =>
+          setAiOpen((value) => !value)
+        }
+      >
+        {aiOpen ? "×" : "✦"}
+
+        {!aiOpen && (
+          <span>
+            Ask AI
+          </span>
+        )}
+      </button>
+
+      {/* =========================================================
+          AI PANEL
+      ========================================================= */}
+
       {aiOpen && (
         <div className="ai-panel">
-          <div className="ai-header">
-            <div className="ai-title">
-              <div className="ai-logo">+</div>
+          <div className="ai-panel-header">
+            <div className="ai-profile">
+              <div className="ai-avatar">
+                ✦
+              </div>
 
               <div>
-                <strong>PharmaAI</strong>
+                <h3>
+                  PharmaAI
+                </h3>
 
-                <div className="online">
-                  <span className="online-dot" />
+                <p>
+                  <span />
                   AI Assistant Online
-                </div>
+                </p>
               </div>
             </div>
 
-            <div
-              style={{
-                display: "flex",
-                gap: 7,
-              }}
-            >
+            <div className="ai-header-actions">
               <button
                 className="close-ai"
+                type="button"
                 onClick={clearChat}
                 title="Clear chat"
-                disabled={loading}
               >
                 ↻
               </button>
 
               <button
                 className="close-ai"
+                type="button"
                 onClick={() =>
                   setAiOpen(false)
                 }
+                title="Close"
               >
-                ✕
+                ×
               </button>
             </div>
           </div>
 
-          <div className="messages">
+          <div className="ai-messages">
+            <div className="ai-info">
+              PharmaAI can answer questions about
+              our pharmacy products, prices,
+              cosmetics, treatments, and cart.
+            </div>
+
             {messages.map(
               (message, index) => (
                 <div
                   key={`${message.role}-${index}`}
                   className={
                     message.role === "user"
-                      ? "message-row user"
-                      : "message-row"
+                      ? "ai-message user"
+                      : "ai-message assistant"
                   }
                 >
-                  <div
-                    className={
-                      message.role === "user"
-                        ? "message user"
-                        : "message assistant"
-                    }
-                  >
+                  {message.role ===
+                    "assistant" && (
+                    <div className="message-avatar">
+                      ✦
+                    </div>
+                  )}
+
+                  <div className="message-bubble">
                     {message.content}
                   </div>
                 </div>
@@ -1484,19 +1287,26 @@ export default function Home() {
             )}
 
             {loading && (
-              <div className="typing">
-                PharmaAI is thinking...
+              <div className="ai-message assistant">
+                <div className="message-avatar">
+                  ✦
+                </div>
+
+                <div className="message-bubble typing">
+                  <span />
+                  <span />
+                  <span />
+                </div>
               </div>
             )}
           </div>
 
-          <div className="quick-actions">
+          <div className="quick-questions">
             <button
-              className="quick-btn"
-              disabled={loading}
+              type="button"
               onClick={() =>
-                sendMessage(
-                  "Show me the treatments available."
+                void sendMessage(
+                  "Show me all available treatments."
                 )
               }
             >
@@ -1504,11 +1314,10 @@ export default function Home() {
             </button>
 
             <button
-              className="quick-btn"
-              disabled={loading}
+              type="button"
               onClick={() =>
-                sendMessage(
-                  "Show me the cosmetics available."
+                void sendMessage(
+                  "Show me all available cosmetics."
                 )
               }
             >
@@ -1516,11 +1325,10 @@ export default function Home() {
             </button>
 
             <button
-              className="quick-btn"
-              disabled={loading}
+              type="button"
               onClick={() =>
-                sendMessage(
-                  "Show me the prices of all products."
+                void sendMessage(
+                  "Show me all product prices."
                 )
               }
             >
@@ -1528,11 +1336,10 @@ export default function Home() {
             </button>
 
             <button
-              className="quick-btn"
-              disabled={loading}
+              type="button"
               onClick={() =>
-                sendMessage(
-                  "Show me what's currently in my cart."
+                void sendMessage(
+                  "Show me my current cart."
                 )
               }
             >
@@ -1540,181 +1347,255 @@ export default function Home() {
             </button>
           </div>
 
-          <div className="input-area">
-            <form
-              className="input-form"
-              onSubmit={handleSubmit}
+          <form
+            className="ai-input"
+            onSubmit={handleSubmit}
+          >
+            <input
+              value={input}
+              onChange={(event) =>
+                setInput(event.target.value)
+              }
+              placeholder="Ask PharmaAI..."
+              disabled={loading}
+              autoComplete="off"
+            />
+
+            <button
+              type="submit"
+              disabled={
+                loading || !input.trim()
+              }
             >
-              <input
-                className="chat-input"
-                value={input}
-                onChange={(event) =>
-                  setInput(
-                    event.target.value
-                  )
-                }
-                placeholder="Ask about a product..."
-                disabled={loading}
-              />
+              ↑
+            </button>
+          </form>
 
-              <button
-                className="send-btn"
-                type="submit"
-                disabled={
-                  loading ||
-                  !input.trim()
-                }
-              >
-                ↑
-              </button>
-            </form>
-
-            <div className="disclaimer">
-              Product information only •
-              General information does not
-              replace a doctor or pharmacist.
-            </div>
+          <div className="ai-disclaimer">
+            Product information only • General
+            information does not replace a
+            doctor or pharmacist.
           </div>
         </div>
       )}
 
-      {/* CART */}
+      {/* =========================================================
+          CART
+      ========================================================= */}
+
       {cartOpen && (
         <div
-          className="cart-overlay"
+          className="modal-overlay"
           onClick={() =>
             setCartOpen(false)
           }
         >
           <aside
-            className="cart-panel"
+            className="cart-modal"
             onClick={(event) =>
               event.stopPropagation()
             }
           >
-            <div className="cart-header">
-              <h2>Your Cart</h2>
+            <div className="modal-header">
+              <div>
+                <small>
+                  SHOPPING CART
+                </small>
+
+                <h2>
+                  Your Cart
+                </h2>
+              </div>
 
               <button
-                className="close-ai"
+                className="modal-close"
+                type="button"
                 onClick={() =>
                   setCartOpen(false)
                 }
               >
-                ✕
+                ×
               </button>
             </div>
 
             {cart.length === 0 ? (
-              <div className="empty">
-                🛒
-                <br />
-                Your cart is empty.
+              <div className="empty-cart">
+                <div>
+                  🛒
+                </div>
+
+                <h3>
+                  Your cart is empty
+                </h3>
+
+                <p>
+                  Add products from the catalog
+                  and they will appear here.
+                </p>
+
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={() => {
+                    setCartOpen(false);
+
+                    document
+                      .getElementById("products")
+                      ?.scrollIntoView({
+                        behavior: "smooth",
+                      });
+                  }}
+                >
+                  Browse Products
+                </button>
               </div>
             ) : (
               <>
-                {cart.map((item) => (
-                  <div
-                    className="cart-item"
-                    key={item.id}
-                  >
-                    <div>
-                      <strong>
-                        {item.name}
-                      </strong>
+                <div className="cart-items">
+                  {cart.map((item) => (
+                    <div
+                      className="cart-item"
+                      key={item.id}
+                    >
+                      {/* CART PRODUCT IMAGE */}
 
-                      <div
-                        style={{
-                          opacity: 0.6,
-                          marginTop: 5,
-                        }}
-                      >
-                        EGP {item.price}
+                      <div className="cart-product-image">
+                        <img
+                          src={item.image}
+                          alt={item.name}
+                          onError={(event) => {
+                            event.currentTarget.style.display =
+                              "none";
+
+                            const parent =
+                              event.currentTarget
+                                .parentElement;
+
+                            if (parent) {
+                              parent.textContent =
+                                item.emoji;
+                            }
+                          }}
+                        />
                       </div>
 
-                      <div className="quantity">
-                        <button
-                          onClick={() =>
-                            decreaseQuantity(
-                              item.id
-                            )
-                          }
-                        >
-                          −
-                        </button>
+                      <div className="cart-item-info">
+                        <h3>
+                          {item.name}
+                        </h3>
 
-                        <strong>
-                          {item.quantity}
+                        <p>
+                          EGP {item.price} each
+                        </p>
+
+                        <div className="quantity">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              decreaseQuantity(
+                                item.id
+                              )
+                            }
+                          >
+                            −
+                          </button>
+
+                          <span>
+                            {item.quantity}
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              increaseQuantity(
+                                item.id
+                              )
+                            }
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="cart-item-side">
+                        <strong className="cart-item-total">
+                          EGP{" "}
+                          {item.price *
+                            item.quantity}
                         </strong>
 
                         <button
-                          onClick={() =>
-                            increaseQuantity(
-                              item.id
-                            )
-                          }
-                        >
-                          +
-                        </button>
-
-                        <button
-                          style={{
-                            marginLeft: 8,
-                            width: "auto",
-                            padding: "0 8px",
-                          }}
+                          className="remove-item"
+                          type="button"
                           onClick={() =>
                             removeFromCart(
                               item.id
                             )
                           }
                         >
-                          🗑
+                          Remove
                         </button>
                       </div>
                     </div>
-
-                    <strong>
-                      EGP{" "}
-                      {item.price *
-                        item.quantity}
-                    </strong>
-                  </div>
-                ))}
-
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent:
-                      "space-between",
-                    marginTop: 25,
-                    fontSize: 20,
-                  }}
-                >
-                  <strong>Total</strong>
-
-                  <strong>
-                    EGP {cartTotal}
-                  </strong>
+                  ))}
                 </div>
 
-                <button
-                  className="checkout"
-                  onClick={openCheckout}
-                >
-                  Proceed to Checkout
-                </button>
+                <div className="cart-summary">
+                  <div>
+                    <span>
+                      Items
+                    </span>
+
+                    <strong>
+                      {cartCount}
+                    </strong>
+                  </div>
+
+                  <div className="cart-total">
+                    <span>
+                      Total
+                    </span>
+
+                    <strong>
+                      EGP {cartTotal}
+                    </strong>
+                  </div>
+
+                  <button
+                    className="checkout-button"
+                    type="button"
+                    onClick={() => {
+                      setCheckoutOpen(true);
+                      setCartOpen(false);
+                    }}
+                  >
+                    Proceed to Checkout
+                  </button>
+
+                  <button
+                    className="clear-cart-button"
+                    type="button"
+                    onClick={clearCart}
+                  >
+                    Clear Cart
+                  </button>
+                </div>
               </>
             )}
           </aside>
         </div>
       )}
 
-      {/* CHECKOUT */}
+      {/* =========================================================
+          CHECKOUT
+      ========================================================= */}
+
       {checkoutOpen && (
         <div
-          className="cart-overlay"
-          onClick={closeCheckout}
+          className="modal-overlay"
+          onClick={() =>
+            setCheckoutOpen(false)
+          }
         >
           <div
             className="checkout-modal"
@@ -1724,11 +1605,7 @@ export default function Home() {
           >
             {!orderConfirmed ? (
               <>
-                <div
-                  style={{
-                    fontSize: 50,
-                  }}
-                >
+                <div className="checkout-icon">
                   🛍️
                 </div>
 
@@ -1736,59 +1613,58 @@ export default function Home() {
                   Confirm Your Order
                 </h2>
 
-                <p
-                  style={{
-                    opacity: 0.6,
-                    lineHeight: 1.6,
-                  }}
-                >
-                  Your total is{" "}
+                <p>
+                  Your current total is
                   <strong>
+                    {" "}
                     EGP {cartTotal}
                   </strong>
                   .
                 </p>
 
                 <button
-                  className="checkout"
-                  onClick={confirmOrder}
+                  className="checkout-button"
+                  type="button"
+                  onClick={() => {
+                    setOrderConfirmed(true);
+                    setCart([]);
+                  }}
                 >
                   Confirm Order
                 </button>
 
                 <button
-                  className="cancel-btn"
-                  onClick={closeCheckout}
+                  className="cancel-button"
+                  type="button"
+                  onClick={() =>
+                    setCheckoutOpen(false)
+                  }
                 >
                   Cancel
                 </button>
               </>
             ) : (
               <>
-                <div
-                  style={{
-                    fontSize: 60,
-                  }}
-                >
-                  ✅
+                <div className="checkout-icon">
+                  ✓
                 </div>
 
                 <h2>
                   Order Confirmed
                 </h2>
 
-                <p
-                  style={{
-                    opacity: 0.6,
-                  }}
-                >
-                  Thank you for shopping
-                  with PharmaAI.
+                <p>
+                  Thank you for shopping with
+                  PharmaAI.
                 </p>
 
                 <button
-                  className="checkout"
-                  onClick={closeCheckout}
+                  className="checkout-button"
+                  type="button"
+                  onClick={() => {
+                    setCheckoutOpen(false);
+                    setOrderConfirmed(false);
+                  }}
                 >
                   Done
                 </button>
